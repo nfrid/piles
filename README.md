@@ -1,8 +1,36 @@
 # parket
 
-minimal tiling window manager for macOS. emulates workspaces by moving windows offscreen - no private API, no SIP modifications. inspired by [dwm](https://dwm.suckless.org/) and [AeroSpace](https://github.com/nikitabobko/AeroSpace).
+minimal tiling window manager for macOS.
 
-swift, zero dependencies.
+parket uses swift and public macOS APIs. no private API, no SIP modifications, zero dependencies.
+
+it emulates workspaces by moving windows offscreen and tiles windows with a dwm-style master-stack layout.
+
+![parket preview](assets/parket-preview.png)
+
+inspired by [dwm](https://dwm.suckless.org/) and [AeroSpace](https://github.com/nikitabobko/AeroSpace).
+
+## install
+
+```bash
+brew tap basuev/parket
+brew install --cask parket
+```
+
+or build from source:
+
+```bash
+make install
+open /Applications/parket.app
+```
+
+grant permissions in system settings -> privacy & security when prompted, then relaunch.
+
+## requirements
+
+- macOS 14+, Apple Silicon
+- accessibility permission
+- input monitoring permission
 
 ## features
 
@@ -61,28 +89,6 @@ command = "open -n -a Safari"
 custom bindings always include the modifier key (option by default). prefix with `shift+` to add shift to the combo.
 
 to reload config at runtime, use the "Reload Config" option in the menubar menu.
-
-## requirements
-
-- macOS 14+, Apple Silicon
-- accessibility permission
-- input monitoring permission
-
-## install
-
-```bash
-brew tap basuev/parket
-brew install --cask parket
-```
-
-or build from source:
-
-```bash
-make install
-open /Applications/parket.app
-```
-
-grant permissions in system settings -> privacy & security when prompted, then relaunch.
 
 ## update
 
