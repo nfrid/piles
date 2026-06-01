@@ -130,7 +130,10 @@ package struct Config {
 
     package static func load() {
         let path = NSString("~/.config/piles/config.toml").expandingTildeInPath
-        guard FileManager.default.fileExists(atPath: path) else { return }
+        guard FileManager.default.fileExists(atPath: path) else {
+            shared = Config()
+            return
+        }
 
         guard let data = FileManager.default.contents(atPath: path),
               let text = String(data: data, encoding: .utf8)
@@ -139,6 +142,10 @@ package struct Config {
             return
         }
 
+        load(text: text)
+    }
+
+    package static func load(text: String) {
         let toml: [String: Any]
         do {
             toml = try Toml.parse(text)
@@ -152,10 +159,16 @@ package struct Config {
         if let count = toml["workspace_count"] as? Int, count >= 1, count <= 9 {
             config.workspaceCount = count
             config.numberKeys = buildNumberKeys(count: count)
+        } else if toml["workspace_count"] != nil {
+            fputs("piles: workspace_count must be between 1 and 9, using 9\n", stderr)
         }
 
         if let ratio = toml["master_ratio"] as? Double {
-            config.masterRatio = CGFloat(ratio)
+            if ratio >= 0, ratio <= 1 {
+                config.masterRatio = CGFloat(ratio)
+            } else {
+                fputs("piles: master_ratio must be between 0.0 and 1.0, using 0.55\n", stderr)
+            }
         }
 
         if let layout = toml["default_layout"] as? String {

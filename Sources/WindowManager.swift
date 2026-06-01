@@ -141,6 +141,62 @@ struct TrackedWindow: Equatable {
 }
 
 enum WindowManager {
+    private static func axElementAttribute(_ element: AXUIElement, _ attribute: CFString) -> AXUIElement? {
+        var value: AnyObject?
+        guard AXUIElementCopyAttributeValue(element, attribute, &value) == .success,
+              let candidate = value,
+              CFGetTypeID(candidate) == AXUIElementGetTypeID()
+        else { return nil }
+        return (candidate as! AXUIElement)
+    }
+
+    private static func axValueAttribute(_ element: AXUIElement, _ attribute: CFString, type: AXValueType) -> AXValue? {
+        var value: AnyObject?
+        guard AXUIElementCopyAttributeValue(element, attribute, &value) == .success,
+              let candidate = value,
+              CFGetTypeID(candidate) == AXValueGetTypeID(),
+              AXValueGetType(candidate as! AXValue) == type
+        else { return nil }
+        return (candidate as! AXValue)
+    }
+
+    private static func axStringAttribute(_ element: AXUIElement, _ attribute: CFString) -> String? {
+        var value: AnyObject?
+        guard AXUIElementCopyAttributeValue(element, attribute, &value) == .success,
+              let string = value as? String
+        else { return nil }
+        return string
+    }
+
+    private static func axBoolAttribute(_ element: AXUIElement, _ attribute: CFString) -> Bool? {
+        var value: AnyObject?
+        guard AXUIElementCopyAttributeValue(element, attribute, &value) == .success,
+              let bool = value as? Bool
+        else { return nil }
+        return bool
+    }
+
+    private static func axWindowAttributes(_ element: AXUIElement) -> (role: String?, subrole: String?, minimized: Bool, fullscreen: Bool)? {
+        let attrs = [
+            kAXRoleAttribute,
+            kAXSubroleAttribute,
+            kAXMinimizedAttribute,
+            "AXFullScreen"
+        ] as CFArray
+
+        var values: CFArray?
+        guard AXUIElementCopyMultipleAttributeValues(element, attrs, .stopOnError, &values) == .success,
+              let results = values as? [AnyObject], results.count == 4
+        else { return nil }
+
+        return (
+            role: results[0] as? String,
+            subrole: results[1] as? String,
+            minimized: results[2] as? Bool ?? false,
+            fullscreen: results[3] as? Bool ?? false
+        )
+    }
+
     static func allWindows() -> [TrackedWindow] {
         var result: [TrackedWindow] = []
         for app in NSWorkspace.shared.runningApplications {
@@ -201,13 +257,7 @@ enum WindowManager {
     }
 
     private static func trackedWindow(_ appRef: AXUIElement, _ attribute: CFString, pid: pid_t) -> TrackedWindow? {
-        var value: AnyObject?
-        guard AXUIElementCopyAttributeValue(appRef, attribute, &value) == .success,
-              CFGetTypeID(value) == AXUIElementGetTypeID()
-        else {
-            return nil
-        }
-        let element = value as! AXUIElement
+        guard let element = axElementAttribute(appRef, attribute) else { return nil }
         let window = TrackedWindow(element: element, pid: pid)
         guard window.isTileable() else { return nil }
         return window
@@ -251,27 +301,20 @@ enum WindowManager {
     }
 
     static func canonicalWindowElement(_ element: AXUIElement) -> AXUIElement? {
-        var value: AnyObject?
-        guard AXUIElementCopyAttributeValue(element, kAXWindowAttribute as CFString, &value) == .success,
-              CFGetTypeID(value) == AXUIElementGetTypeID()
-        else { return nil }
-
-        let window = value as! AXUIElement
+        guard let window = axElementAttribute(element, kAXWindowAttribute as CFString) else { return nil }
         guard isStandardWindow(window) else { return nil }
         return window
     }
 
     static func frame(of element: AXUIElement) -> CGRect? {
-        var posValue: AnyObject?
-        var sizeValue: AnyObject?
-        guard AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &posValue) == .success,
-              AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &sizeValue) == .success
+        guard let posValue = axValueAttribute(element, kAXPositionAttribute as CFString, type: .cgPoint),
+              let sizeValue = axValueAttribute(element, kAXSizeAttribute as CFString, type: .cgSize)
         else { return nil }
 
         var pos = CGPoint.zero
         var size = CGSize.zero
-        AXValueGetValue(posValue as! AXValue, .cgPoint, &pos)
-        AXValueGetValue(sizeValue as! AXValue, .cgSize, &size)
+        AXValueGetValue(posValue, .cgPoint, &pos)
+        AXValueGetValue(sizeValue, .cgSize, &size)
         return CGRect(origin: pos, size: size)
     }
 

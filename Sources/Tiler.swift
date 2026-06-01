@@ -5,30 +5,43 @@ package enum Layout {
     case monocle
 }
 
+package struct LayoutSettings {
+    let masterRatio: CGFloat
+
+    package init(masterRatio: CGFloat = 0.55) {
+        self.masterRatio = min(max(masterRatio, 0), 1)
+    }
+}
+
 package enum Tiler {
-    package static func calculateFrames(count: Int, screen: CGRect, layout: Layout) -> [CGRect] {
+    package static func calculateFrames(
+        count: Int,
+        screen: CGRect,
+        layout: Layout,
+        settings: LayoutSettings = LayoutSettings()
+    ) -> [CGRect] {
         guard count > 0 else { return [] }
         switch layout {
-        case .tile: return tileFrames(count: count, screen: screen)
+        case .tile: return tileFrames(count: count, screen: screen, settings: settings)
         case .monocle: return monocleFrames(count: count, screen: screen)
         }
     }
 
-    static func tile(windows: [TrackedWindow], screen: CGRect, layout: Layout) {
-        let frames = calculateFrames(count: windows.count, screen: screen, layout: layout)
+    static func tile(windows: [TrackedWindow], screen: CGRect, layout: Layout, settings: LayoutSettings) {
+        let frames = calculateFrames(count: windows.count, screen: screen, layout: layout, settings: settings)
         for (i, frame) in frames.enumerated() {
             windows[i].setFrame(frame)
         }
     }
 
-    private static func tileFrames(count: Int, screen: CGRect) -> [CGRect] {
+    private static func tileFrames(count: Int, screen: CGRect, settings: LayoutSettings) -> [CGRect] {
         if count == 1 {
             return [screen]
         }
 
         var result: [CGRect] = []
         result.reserveCapacity(count)
-        let masterWidth = floor(screen.width * Config.shared.masterRatio)
+        let masterWidth = floor(screen.width * settings.masterRatio)
         result.append(CGRect(
             x: screen.origin.x, y: screen.origin.y,
             width: masterWidth, height: screen.height

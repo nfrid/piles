@@ -253,7 +253,12 @@ package final class Monitor {
         cleanActiveWorkspace()
         let screen = WindowManager.screenFrame(for: self.screen)
         ignoreGeometryUntil = ProcessInfo.processInfo.systemUptime + Self.geometrySuppressionDelay
-        Tiler.tile(windows: workspaces[active], screen: screen, layout: layouts[active])
+        Tiler.tile(
+            windows: workspaces[active],
+            screen: screen,
+            layout: layouts[active],
+            settings: LayoutSettings(masterRatio: Config.shared.masterRatio)
+        )
         return screen
     }
 
@@ -269,7 +274,12 @@ package final class Monitor {
     private func activeWorkspaceMatchesLayout(tolerance: CGFloat) -> Bool {
         let windows = workspaces[active]
         let screen = WindowManager.screenFrame(for: self.screen)
-        let frames = Tiler.calculateFrames(count: windows.count, screen: screen, layout: layouts[active])
+        let frames = Tiler.calculateFrames(
+            count: windows.count,
+            screen: screen,
+            layout: layouts[active],
+            settings: LayoutSettings(masterRatio: Config.shared.masterRatio)
+        )
         guard frames.count == windows.count else { return false }
 
         for i in windows.indices {

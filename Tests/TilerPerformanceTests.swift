@@ -3,6 +3,7 @@ import CoreGraphics
 
 enum TilerPerformanceTests {
     static let screen = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+    static let settings = LayoutSettings(masterRatio: 0.55)
 
     static func runAll() -> (passed: Int, failed: Int) {
         var passed = 0
@@ -22,7 +23,7 @@ enum TilerPerformanceTests {
             let start = DispatchTime.now()
             for _ in 0..<iterations {
                 for count in 1...20 {
-                    _ = Tiler.calculateFrames(count: count, screen: screen, layout: .tile)
+                    _ = Tiler.calculateFrames(count: count, screen: screen, layout: .tile, settings: settings)
                 }
             }
             let elapsed = Double(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000
@@ -36,7 +37,7 @@ enum TilerPerformanceTests {
             let start = DispatchTime.now()
             for _ in 0..<iterations {
                 for count in 1...50 {
-                    _ = Tiler.calculateFrames(count: count, screen: screen, layout: .monocle)
+                    _ = Tiler.calculateFrames(count: count, screen: screen, layout: .monocle, settings: settings)
                 }
             }
             let elapsed = Double(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000

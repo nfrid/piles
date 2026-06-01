@@ -8,6 +8,10 @@ package final class Hotkeys {
 
     private init() {}
 
+    private static func passThrough(_ event: CGEvent) -> Unmanaged<CGEvent> {
+        Unmanaged.passUnretained(event)
+    }
+
     package func start() {
         let mask: CGEventMask = (1 << CGEventType.keyDown.rawValue)
 
@@ -34,7 +38,7 @@ package final class Hotkeys {
             if let tap = Hotkeys.shared.tap {
                 CGEvent.tapEnable(tap: tap, enable: true)
             }
-            return Unmanaged.passRetained(event)
+            return passThrough(event)
         }
 
         let flags = event.flags
@@ -42,7 +46,7 @@ package final class Hotkeys {
 
         let config = Config.shared
         if config.modifier == .maskCommand && keyCode == Key.tab && flags.contains(.maskCommand) {
-            return Unmanaged.passRetained(event)
+            return passThrough(event)
         }
 
         let hasModifier = flags.contains(config.modifier)
@@ -53,7 +57,7 @@ package final class Hotkeys {
             (config.modifier != .maskAlternate && flags.contains(.maskAlternate))
 
         guard hasModifier, !hasExtraModifiers else {
-            return Unmanaged.passRetained(event)
+            return passThrough(event)
         }
 
         for binding in config.customBindings {
@@ -63,7 +67,11 @@ package final class Hotkeys {
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: "/bin/sh")
                 process.arguments = ["-c", cmd]
-                try? process.run()
+                do {
+                    try process.run()
+                } catch {
+                    fputs("piles: failed to run custom command '\(cmd)': \(error)\n", stderr)
+                }
             }
             return nil
         }
@@ -131,6 +139,6 @@ package final class Hotkeys {
             return nil
         }
 
-        return Unmanaged.passRetained(event)
+        return passThrough(event)
     }
 }
