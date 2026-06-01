@@ -6,10 +6,13 @@ BUNDLE_ID = com.piles.app
 CODESIGN_IDENTITY ?= -
 CODESIGN_REQUIREMENTS ?= =designated => identifier "$(BUNDLE_ID)"
 
-.PHONY: build test check install clean dist benchmark
+.PHONY: build debug test check install clean dist benchmark
 
 build:
 	swift build --product piles -c release
+
+debug:
+	swift run piles
 
 test:
 	swift build --product piles-tests

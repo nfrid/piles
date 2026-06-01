@@ -133,6 +133,7 @@ package final class Monitor {
     func addWindow(_ window: TrackedWindow) -> WindowUpdate {
         let existing = updateExistingWindow(window)
         guard existing == .missing else { return existing }
+        DebugLog.write("monitor \(displayID) add active=\(active) window=\(DebugLog.describe(window))")
         workspaces[active].insert(window, at: 0)
         scheduleRetile()
         return .inserted
@@ -143,6 +144,7 @@ package final class Monitor {
             guard let i = workspaces[ws].firstIndex(of: window) else { continue }
             let current = workspaces[ws][i]
             if current.group != window.group || !current.hasSameMembers(window) {
+                DebugLog.write("monitor \(displayID) replace workspace=\(ws) index=\(i) old={\(DebugLog.describe(current))} new={\(DebugLog.describe(window))}")
                 workspaces[ws][i] = window
                 return .replaced
             }
@@ -153,6 +155,7 @@ package final class Monitor {
             guard let i = workspaces[ws].firstIndex(where: { $0.group == window.group && !$0.isTileable() }) else {
                 continue
             }
+            DebugLog.write("monitor \(displayID) replace untileable workspace=\(ws) index=\(i) old={\(DebugLog.describe(workspaces[ws][i]))} new={\(DebugLog.describe(window))}")
             workspaces[ws][i] = window
             return .replaced
         }
@@ -176,7 +179,11 @@ package final class Monitor {
 
     func removeStaleWindows(pid: pid_t, current: [TrackedWindow]) -> Bool {
         removeWindows { window in
-            window.pid == pid && !current.contains(window)
+            let stale = window.pid == pid && !current.contains(window)
+            guard stale else { return false }
+            let remove = !window.isTileable()
+            DebugLog.write("monitor \(displayID) stale pid=\(pid) remove=\(remove) window=\(DebugLog.describe(window))")
+            return remove
         }
     }
 

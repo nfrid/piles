@@ -83,6 +83,7 @@ package final class WorkspaceManager {
     }
 
     func syncWindows(pid: pid_t, windows: [TrackedWindow]) {
+        DebugLog.write("workspace sync begin pid=\(pid) windows=\(DebugLog.describe(windows))")
         var changed = false
         for monitor in monitors {
             if monitor.removeStaleWindows(pid: pid, current: windows) {
@@ -98,6 +99,7 @@ package final class WorkspaceManager {
         if changed {
             StatusBar.shared.update()
         }
+        DebugLog.write("workspace sync end pid=\(pid) changed=\(changed)")
     }
 
     func removeWindow(pid: pid_t) {
@@ -194,6 +196,7 @@ package final class WorkspaceManager {
 
     private func startExternalFocus(pid: pid_t) {
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else { return }
+        DebugLog.write("external focus start pid=\(pid)")
         focusFollowWork?.cancel()
         performExternalFocus(pid: pid, attempt: 0)
     }
@@ -215,15 +218,18 @@ package final class WorkspaceManager {
 
         if let focused = WindowManager.focusedWindow(pid: pid),
            let location = locateWindow(focused) {
+            DebugLog.write("external focus matched pid=\(pid) attempt=\(attempt) window=\(DebugLog.describe(focused)) monitor=\(location.monitorIndex) workspace=\(location.workspaceIndex) index=\(location.windowIndex)")
             revealExternalFocus(focused, at: location)
             return
         }
 
         if let fallback = singleTrackedWindow(pid: pid) {
+            DebugLog.write("external focus fallback pid=\(pid) attempt=\(attempt) window=\(DebugLog.describe(fallback.window)) monitor=\(fallback.location.monitorIndex) workspace=\(fallback.location.workspaceIndex) index=\(fallback.location.windowIndex)")
             revealExternalFocus(fallback.window, at: fallback.location)
             return
         }
 
+        DebugLog.write("external focus retry pid=\(pid) attempt=\(attempt)")
         retryExternalFocus(pid: pid, attempt: attempt)
     }
 

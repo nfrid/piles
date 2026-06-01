@@ -62,10 +62,12 @@ package final class WindowObserver {
 
     private func trySyncWindows(pid: pid_t, attempt: Int) {
         guard let windows = WindowManager.windows(pid: pid), !windows.isEmpty else {
+            DebugLog.write("sync retry pid=\(pid) attempt=\(attempt)")
             retrySyncWindows(pid: pid, attempt: attempt)
             return
         }
 
+        DebugLog.write("sync pid=\(pid) attempt=\(attempt) windows=\(DebugLog.describe(windows))")
         WorkspaceManager.shared.syncWindows(pid: pid, windows: windows)
         observeWindows(windows, pid: pid)
     }
@@ -95,14 +97,13 @@ package final class WindowObserver {
 
     private static let axCallback: AXObserverCallback = { _, element, notification, _ in
         let notif = notification as String
+        var pidValue: pid_t = 0
+        AXUIElementGetPid(element, &pidValue)
+        DebugLog.write("ax notification=\(notif) pid=\(pidValue)")
 
         if notif == kAXWindowCreatedNotification {
-            var pidValue: pid_t = 0
-            AXUIElementGetPid(element, &pidValue)
             WindowObserver.shared.trySyncWindows(pid: pidValue, attempt: 0)
         } else if notif == kAXUIElementDestroyedNotification {
-            var pidValue: pid_t = 0
-            AXUIElementGetPid(element, &pidValue)
             if let obs = WindowObserver.shared.observers[pidValue] {
                 for name in [
                     kAXUIElementDestroyedNotification,
@@ -113,14 +114,11 @@ package final class WindowObserver {
                 }
             }
             let windows = WindowManager.windows(pid: pidValue) ?? []
+            DebugLog.write("destroy sync pid=\(pidValue) windows=\(DebugLog.describe(windows))")
             WorkspaceManager.shared.syncWindows(pid: pidValue, windows: windows)
         } else if notif == kAXFocusedWindowChangedNotification || notif == kAXFocusedUIElementChangedNotification {
-            var pidValue: pid_t = 0
-            AXUIElementGetPid(element, &pidValue)
             WorkspaceManager.shared.followExternalFocus(pid: pidValue)
         } else if notif == kAXMovedNotification || notif == kAXResizedNotification {
-            var pidValue: pid_t = 0
-            AXUIElementGetPid(element, &pidValue)
             WorkspaceManager.shared.handleWindowGeometryChange(pid: pidValue, element: element)
         }
     }
