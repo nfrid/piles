@@ -4,6 +4,10 @@ Highly opinionated and tiny window / workspace manager for MacOS.
 
 Based on [parket](https://github.com/basuev/parket).
 
+## For whom
+
+This project is mainly made for myself. Feel free to fork it and make your own.
+
 ## Install
 
 Build from source as I don't intend to publish it to brew:
@@ -38,8 +42,8 @@ relaunch.
 - **workspace keys** - option+1-9 switches workspaces; add shift to move the
   focused window there and follow it
 - **menubar indicator** - badge widgets show active workspace and occupied ones
-- **custom keybindings** - configure built-in bindings and custom shell
-  commands via `~/.config/piles/config.toml`
+- **custom keybindings** - configure built-in bindings and custom shell commands
+  via `~/.config/piles/config.toml`
 - **multi-monitor** - per-display workspaces, each monitor has its own workspace
   set
 - **app switcher follow** - command+tab to a hidden workspace window opens that
