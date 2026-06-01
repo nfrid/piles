@@ -110,6 +110,46 @@ package struct BuiltinBindings {
     var lastWorkspace: (key: UInt16, shift: Bool) = (Key.tab, false)
 }
 
+package struct WindowAssignment {
+    let app: String?
+    let bundleID: String?
+    let title: String?
+    let titleContains: String?
+    let monitor: Int?
+    let workspace: Int?
+    let position: Int?
+
+    package init(
+        app: String? = nil,
+        bundleID: String? = nil,
+        title: String? = nil,
+        titleContains: String? = nil,
+        monitor: Int? = nil,
+        workspace: Int? = nil,
+        position: Int? = nil
+    ) {
+        self.app = app
+        self.bundleID = bundleID
+        self.title = title
+        self.titleContains = titleContains
+        self.monitor = monitor
+        self.workspace = workspace
+        self.position = position
+    }
+
+    func matches(app: String?, bundleID: String?, title: String?) -> Bool {
+        if let expected = self.app, expected != app { return false }
+        if let expected = self.bundleID, expected != bundleID { return false }
+        if let expected = self.title, expected != title { return false }
+        if let needle = titleContains, title?.range(of: needle) == nil { return false }
+
+        return self.app != nil
+            || self.bundleID != nil
+            || self.title != nil
+            || self.titleContains != nil
+    }
+}
+
 package struct Config {
     package static var shared = Config()
 
@@ -120,6 +160,7 @@ package struct Config {
     package var customBindings: [Binding] = [
         Binding(key: Key.return, shift: true, command: "open -n -a Terminal"),
     ]
+    package var assignments: [WindowAssignment] = []
     package var bindings = BuiltinBindings()
 
     package private(set) var numberKeys: [UInt16: Int] = buildNumberKeys(count: 9)
@@ -220,7 +261,39 @@ package struct Config {
             }
         }
 
+        if let assignments = toml["assign"] as? [[String: Any]] {
+            config.assignments = assignments.compactMap { entry in
+                let app = entry["app"] as? String
+                let bundleID = entry["bundle_id"] as? String
+                let title = entry["title"] as? String
+                let titleContains = entry["title_contains"] as? String
+
+                guard app != nil || bundleID != nil || title != nil || titleContains != nil else {
+                    fputs("piles: assignment needs app, bundle_id, title, or title_contains\n", stderr)
+                    return nil
+                }
+
+                let monitor = positiveInt(entry["monitor"], name: "monitor")
+                let workspace = workspaceIndex(entry["workspace"], max: config.workspaceCount)
+                let position = positiveInt(entry["position"], name: "position")
+
+                return WindowAssignment(
+                    app: app,
+                    bundleID: bundleID,
+                    title: title,
+                    titleContains: titleContains,
+                    monitor: monitor,
+                    workspace: workspace,
+                    position: position
+                )
+            }
+        }
+
         shared = config
+    }
+
+    package func assignment(app: String?, bundleID: String?, title: String?) -> WindowAssignment? {
+        assignments.first { $0.matches(app: app, bundleID: bundleID, title: title) }
     }
 
     private static func parseKeyString(_ s: String) -> (key: UInt16?, shift: Bool) {
@@ -242,5 +315,23 @@ package struct Config {
             return
         }
         binding = (code, shift)
+    }
+
+    private static func workspaceIndex(_ value: Any?, max: Int) -> Int? {
+        guard let workspace = value as? Int else { return nil }
+        guard workspace >= 1, workspace <= max else {
+            fputs("piles: assignment workspace must be between 1 and \(max)\n", stderr)
+            return nil
+        }
+        return workspace
+    }
+
+    private static func positiveInt(_ value: Any?, name: String) -> Int? {
+        guard let int = value as? Int else { return nil }
+        guard int >= 1 else {
+            fputs("piles: assignment \(name) must be at least 1\n", stderr)
+            return nil
+        }
+        return int
     }
 }

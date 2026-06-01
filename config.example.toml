@@ -35,3 +35,18 @@
 # [[custom]]
 # key = "shift+return"
 # command = "open -n -a Terminal"
+
+# window assignment rules
+# first matching rule wins; monitor, workspace, and position are 1-based
+# match by any combination of app, bundle_id, title, and title_contains
+# [[assign]]
+# app = "Terminal"
+# workspace = 1
+# position = 1
+#
+# [[assign]]
+# bundle_id = "com.apple.Safari"
+# title_contains = "Developer"
+# monitor = 1
+# workspace = 2
+# position = 1

@@ -137,6 +137,14 @@ struct TrackedWindow: Equatable {
         return value as? String
     }
 
+    func appName() -> String? {
+        NSRunningApplication(processIdentifier: pid)?.localizedName
+    }
+
+    func bundleID() -> String? {
+        NSRunningApplication(processIdentifier: pid)?.bundleIdentifier
+    }
+
     private static func unique(_ elements: [AXUIElement]) -> [AXUIElement] {
         var result: [AXUIElement] = []
         for element in elements where !result.contains(where: { CFEqual($0, element) }) {

@@ -28,7 +28,12 @@ package final class WorkspaceManager {
         focusedMonitorIndex = 0
         let windows = WindowManager.allWindows()
         for window in windows {
-            monitorForWindow(window).insertWindow(window)
+            let placement = placementForWindow(window)
+            placement.monitor.addWindow(
+                window,
+                workspace: placement.assignment?.workspace,
+                position: placement.assignment?.position
+            )
         }
         for monitor in monitors {
             monitor.retile()
@@ -75,7 +80,12 @@ package final class WorkspaceManager {
                 return result
             }
         }
-        let result = focusedMonitor.addWindow(window)
+        let placement = placementForWindow(window)
+        let result = placement.monitor.addWindow(
+            window,
+            workspace: placement.assignment?.workspace,
+            position: placement.assignment?.position
+        )
         if result == .inserted {
             StatusBar.shared.update()
         }
@@ -435,5 +445,23 @@ package final class WorkspaceManager {
             }
         }
         return monitors[0]
+    }
+
+    private func placementForWindow(_ window: TrackedWindow) -> (monitor: Monitor, assignment: WindowAssignment?) {
+        let assignment = Config.shared.assignment(
+            app: window.appName(),
+            bundleID: window.bundleID(),
+            title: window.title()
+        )
+
+        if let monitor = assignment?.monitor, monitors.indices.contains(monitor - 1) {
+            return (monitors[monitor - 1], assignment)
+        }
+
+        if assignment != nil {
+            return (focusedMonitor, assignment)
+        }
+
+        return (monitorForWindow(window), nil)
     }
 }

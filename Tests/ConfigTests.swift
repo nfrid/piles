@@ -38,6 +38,38 @@ enum ConfigTests {
 
         do {
             Config.load(text: """
+            workspace_count = 4
+
+            [[assign]]
+            app = "Terminal"
+            workspace = 2
+            position = 1
+
+            [[assign]]
+            bundle_id = "com.apple.Safari"
+            title_contains = "Docs"
+            monitor = 2
+            workspace = 3
+            position = 2
+            """)
+
+            check(Config.shared.assignments.count == 2, "loads window assignments")
+            let terminal = Config.shared.assignment(app: "Terminal", bundleID: nil, title: "zsh")
+            check(terminal?.workspace == 2, "matches app assignment")
+            check(terminal?.position == 1, "loads assignment position")
+
+            let safari = Config.shared.assignment(
+                app: "Safari",
+                bundleID: "com.apple.Safari",
+                title: "Apple Developer Docs"
+            )
+            check(safari?.monitor == 2, "loads assignment monitor")
+            check(safari?.workspace == 3, "matches bundle and title_contains assignment")
+            check(Config.shared.assignment(app: "Safari", bundleID: "com.apple.Safari", title: "News") == nil, "rejects title mismatch")
+        }
+
+        do {
+            Config.load(text: """
             workspace_count = 12
             master_ratio = 1.5
             default_layout = "unknown"

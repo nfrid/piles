@@ -131,11 +131,22 @@ package final class Monitor {
 
     @discardableResult
     func addWindow(_ window: TrackedWindow) -> WindowUpdate {
+        addWindow(window, workspace: nil, position: nil)
+    }
+
+    @discardableResult
+    func addWindow(_ window: TrackedWindow, workspace: Int?, position: Int?) -> WindowUpdate {
         let existing = updateExistingWindow(window)
         guard existing == .missing else { return existing }
-        DebugLog.write("monitor \(displayID) add active=\(active) window=\(DebugLog.describe(window))")
-        workspaces[active].insert(window, at: 0)
-        scheduleRetile()
+        let workspaceIndex = clampedWorkspaceIndex(workspace)
+        let insertIndex = clampedInsertIndex(position, count: workspaces[workspaceIndex].count)
+        DebugLog.write("monitor \(displayID) add workspace=\(workspaceIndex) index=\(insertIndex) window=\(DebugLog.describe(window))")
+        workspaces[workspaceIndex].insert(window, at: insertIndex)
+        if workspaceIndex == active {
+            scheduleRetile()
+        } else {
+            window.hideOffscreen(WindowManager.screenRect(for: self.screen))
+        }
         return .inserted
     }
 
@@ -445,6 +456,16 @@ package final class Monitor {
                 win.setFrame(Self.framePreservingSizeInsideScreen(frame, screen: screen))
             }
         }
+    }
+
+    private func clampedWorkspaceIndex(_ workspace: Int?) -> Int {
+        guard let workspace else { return active }
+        return Swift.min(Swift.max(workspace - 1, 0), workspaces.count - 1)
+    }
+
+    private func clampedInsertIndex(_ position: Int?, count: Int) -> Int {
+        guard let position else { return 0 }
+        return Swift.min(Swift.max(position - 1, 0), count)
     }
 
     package static func framePreservingSizeInsideScreen(_ frame: CGRect, screen: CGRect) -> CGRect {

@@ -48,6 +48,8 @@ relaunch.
   set
 - **app switcher follow** - command+tab to a hidden workspace window opens that
   workspace
+- **window assignment rules** - place windows by app, bundle id, or title via
+  `[[assign]]` entries in `~/.config/piles/config.toml`
 - **crash safety** - all windows restore on exit
 
 ## License
