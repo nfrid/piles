@@ -7,6 +7,9 @@
 # master window width ratio (0.0-1.0)
 # master_ratio = 0.55
 
+# default layout for each workspace: "monocle" or "tile"
+# default_layout = "monocle"
+
 # global modifier key: "option", "control", "command"
 # modifier = "option"
 

@@ -57,7 +57,8 @@ package final class StatusBar: NSObject {
         let layout = monitor.layouts[monitor.active]
         if layout == .monocle {
             let windowCount = monitor.workspaces[monitor.active].count
-            views.append(LayoutIndicatorView(text: "M\(windowCount)", fontSize: fontSize))
+            let currentWindow = windowCount == 0 ? 0 : min(monitor.focusedIndices[monitor.active] + 1, windowCount)
+            views.append(LayoutIndicatorView(text: "\(currentWindow)/\(windowCount)", fontSize: fontSize))
         }
 
         for i in 0..<Config.shared.workspaceCount {
@@ -160,12 +161,14 @@ private struct StatusState: Equatable {
     let activeLayout: Layout
     let occupiedWorkspaces: [Bool]
     let activeWindowCount: Int
+    let activeFocusedIndex: Int
 
     static func capture(_ ws: WorkspaceManager) -> StatusState {
         guard !ws.monitors.isEmpty else {
             return StatusState(
                 monitorCount: 0, focusedMonitorIndex: 0, activeWorkspace: 0,
-                activeLayout: .tile, occupiedWorkspaces: [], activeWindowCount: 0
+                activeLayout: .tile, occupiedWorkspaces: [], activeWindowCount: 0,
+                activeFocusedIndex: 0
             )
         }
         let monitor = ws.focusedMonitor
@@ -176,7 +179,8 @@ private struct StatusState: Equatable {
             activeWorkspace: monitor.active,
             activeLayout: monitor.layouts[monitor.active],
             occupiedWorkspaces: occupied,
-            activeWindowCount: monitor.workspaces[monitor.active].count
+            activeWindowCount: monitor.workspaces[monitor.active].count,
+            activeFocusedIndex: monitor.focusedIndices[monitor.active]
         )
     }
 }

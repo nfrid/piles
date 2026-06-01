@@ -113,6 +113,7 @@ package struct Config {
 
     package var workspaceCount: Int = 9
     package var masterRatio: CGFloat = 0.55
+    package var defaultLayout: Layout = .monocle
     package var modifier: CGEventFlags = .maskAlternate
     package var customBindings: [Binding] = [
         Binding(key: Key.return, shift: true, command: "open -n -a Terminal"),
@@ -155,6 +156,14 @@ package struct Config {
 
         if let ratio = toml["master_ratio"] as? Double {
             config.masterRatio = CGFloat(ratio)
+        }
+
+        if let layout = toml["default_layout"] as? String {
+            switch layout {
+            case "tile": config.defaultLayout = .tile
+            case "monocle": config.defaultLayout = .monocle
+            default: fputs("piles: unknown default_layout '\(layout)', using monocle\n", stderr)
+            }
         }
 
         if let mod = toml["modifier"] as? String {

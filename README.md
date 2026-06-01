@@ -24,13 +24,22 @@ relaunch.
 
 ## Features
 
-TODO: update to my own list
-
-- **workspaces** - 9 virtual workspaces via offscreen window hiding
-- **master-stack tiling** - new windows auto-tile in dwm-style layout
-- **monocle layout** - per-workspace fullscreen mode, toggle with option+m
+- **workspaces** - up to 9 virtual workspaces via offscreen window hiding
+- **monocle by default** - new workspaces start fullscreen; set
+  `default_layout = "tile"` to use master-stack tiling by default
+- **master-stack tiling** - dwm-style master/stack layout with configurable
+  master width
+- **per-workspace layouts** - toggle the active workspace between monocle and
+  tile with option+m
+- **monocle position indicator** - the menu bar shows focused window position
+  and total window count, e.g. `2/5`
+- **workspace navigation** - option+h/l jumps to the previous/next occupied
+  workspace; add shift to move the focused window there
+- **move-and-follow workspace keys** - option+1-9 moves the focused window to
+  that workspace and switches to it
 - **menubar indicator** - badge widgets show active workspace and occupied ones
-- **custom keybindings** - bind any key combo to shell commands via toml config
+- **custom keybindings** - configure built-in bindings and custom shell
+  commands via `~/.config/piles/config.toml`
 - **multi-monitor** - per-display workspaces, each monitor has its own workspace
   set
 - **app switcher follow** - command+tab to a hidden workspace window opens that
