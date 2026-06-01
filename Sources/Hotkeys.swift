@@ -5,6 +5,7 @@ package final class Hotkeys {
     package static let shared = Hotkeys()
 
     private var tap: CFMachPort?
+    private var resizingMasterRatio = false
 
     private init() {}
 
@@ -15,7 +16,10 @@ package final class Hotkeys {
     package func start() {
         let mask: CGEventMask =
             (1 << CGEventType.keyDown.rawValue) |
-            (1 << CGEventType.flagsChanged.rawValue)
+            (1 << CGEventType.flagsChanged.rawValue) |
+            (1 << CGEventType.leftMouseDown.rawValue) |
+            (1 << CGEventType.leftMouseDragged.rawValue) |
+            (1 << CGEventType.leftMouseUp.rawValue)
 
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
@@ -66,7 +70,40 @@ package final class Hotkeys {
             (config.modifier != .maskControl && flags.contains(.maskControl)) ||
             (config.modifier != .maskAlternate && flags.contains(.maskAlternate))
 
+        if type == .leftMouseUp, Hotkeys.shared.resizingMasterRatio {
+            Hotkeys.shared.resizingMasterRatio = false
+            DispatchQueue.main.async {
+                WorkspaceManager.shared.resizeMasterRatio(at: event.location)
+            }
+            return nil
+        }
+
+        if type == .leftMouseDragged, Hotkeys.shared.resizingMasterRatio, !hasModifier {
+            Hotkeys.shared.resizingMasterRatio = false
+            return passThrough(event)
+        }
+
         guard hasModifier, !hasExtraModifiers else {
+            return passThrough(event)
+        }
+
+        if type == .leftMouseDown {
+            let started = onMain {
+                WorkspaceManager.shared.canResizeMasterRatio(at: event.location)
+            }
+            Hotkeys.shared.resizingMasterRatio = started
+            return started ? nil : passThrough(event)
+        }
+
+        if type == .leftMouseDragged {
+            guard Hotkeys.shared.resizingMasterRatio else { return passThrough(event) }
+            DispatchQueue.main.async {
+                WorkspaceManager.shared.resizeMasterRatio(at: event.location)
+            }
+            return nil
+        }
+
+        guard type == .keyDown else {
             return passThrough(event)
         }
 
@@ -140,6 +177,14 @@ package final class Hotkeys {
             DispatchQueue.main.async { WorkspaceManager.shared.focusPrev() }
             return nil
         }
+        if keyCode == b.moveNext.key && hasShift == b.moveNext.shift {
+            DispatchQueue.main.async { WorkspaceManager.shared.moveFocusedWindowNext() }
+            return nil
+        }
+        if keyCode == b.movePrev.key && hasShift == b.movePrev.shift {
+            DispatchQueue.main.async { WorkspaceManager.shared.moveFocusedWindowPrev() }
+            return nil
+        }
         if keyCode == b.swapMaster.key && hasShift == b.swapMaster.shift {
             DispatchQueue.main.async { WorkspaceManager.shared.swapMaster() }
             return nil
@@ -150,5 +195,13 @@ package final class Hotkeys {
         }
 
         return passThrough(event)
+    }
+
+    private static func onMain<T>(_ work: @escaping () -> T) -> T {
+        if Thread.isMainThread {
+            return work()
+        }
+
+        return DispatchQueue.main.sync(execute: work)
     }
 }

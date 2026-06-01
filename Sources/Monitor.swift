@@ -193,6 +193,8 @@ package final class Monitor {
 
     func focusNext() { focusOffset(1) }
     func focusPrev() { focusOffset(-1) }
+    func moveFocusedWindowNext() { moveFocusedWindow(offset: 1) }
+    func moveFocusedWindowPrev() { moveFocusedWindow(offset: -1) }
 
     private func focusOffset(_ offset: Int) {
         guard !activeWorkspaceIsFullscreen else { return }
@@ -208,6 +210,23 @@ package final class Monitor {
         if layouts[active] == .monocle {
             target.raise()
         }
+    }
+
+    private func moveFocusedWindow(offset: Int) {
+        guard !activeWorkspaceIsFullscreen else { return }
+        let windows = workspaces[active]
+        guard windows.count > 1,
+              let focused = WindowManager.focusedWindow(),
+              let i = windows.firstIndex(of: focused)
+        else { return }
+
+        let targetIndex = i + offset
+        guard windows.indices.contains(targetIndex) else { return }
+
+        workspaces[active].swapAt(i, targetIndex)
+        focusedIndices[active] = targetIndex
+        retile()
+        workspaces[active][targetIndex].focus()
     }
 
     func swapMaster() {
@@ -317,6 +336,36 @@ package final class Monitor {
             && abs(lhs.origin.y - rhs.origin.y) <= tolerance
             && abs(lhs.width - rhs.width) <= tolerance
             && abs(lhs.height - rhs.height) <= tolerance
+    }
+
+    func canResizeMasterRatio(at point: CGPoint) -> Bool {
+        masterRatioFor(point: point, requireDividerHit: true) != nil
+    }
+
+    @discardableResult
+    func resizeMasterRatio(at point: CGPoint) -> Bool {
+        guard let ratio = masterRatioFor(point: point, requireDividerHit: false) else { return false }
+        Config.shared.masterRatio = ratio
+        retile()
+        return true
+    }
+
+    private func masterRatioFor(point: CGPoint, requireDividerHit: Bool) -> CGFloat? {
+        guard !activeWorkspaceIsFullscreen,
+              layouts[active] == .tile,
+              workspaces[active].filter({ $0.isTileable() }).count > 1
+        else { return nil }
+
+        let screen = WindowManager.screenFrame(for: self.screen)
+        guard screen.contains(point), screen.width > 0 else { return nil }
+
+        if requireDividerHit {
+            let dividerX = screen.minX + floor(screen.width * Config.shared.masterRatio)
+            guard abs(point.x - dividerX) <= 8 else { return nil }
+        }
+
+        let rawRatio = (point.x - screen.minX) / screen.width
+        return Swift.min(Swift.max(rawRatio, 0.10), 0.90)
     }
 
     package func resizeWorkspaces(to count: Int) {

@@ -131,8 +131,27 @@ package final class WorkspaceManager {
         MonocleBar.shared.update()
     }
 
+    func moveFocusedWindowNext() {
+        focusedMonitor.moveFocusedWindowNext()
+        MonocleBar.shared.update()
+    }
+
+    func moveFocusedWindowPrev() {
+        focusedMonitor.moveFocusedWindowPrev()
+        MonocleBar.shared.update()
+    }
+
     func swapMaster() {
         focusedMonitor.swapMaster()
+    }
+
+    func canResizeMasterRatio(at point: CGPoint) -> Bool {
+        focusedMonitor.canResizeMasterRatio(at: point)
+    }
+
+    func resizeMasterRatio(at point: CGPoint) {
+        guard focusedMonitor.resizeMasterRatio(at: point) else { return }
+        MonocleBar.shared.update()
     }
 
     func toggleLayout() {

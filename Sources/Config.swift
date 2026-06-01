@@ -97,6 +97,8 @@ package enum Key {
 package struct BuiltinBindings {
     var focusNext: (key: UInt16, shift: Bool) = (Key.j, false)
     var focusPrev: (key: UInt16, shift: Bool) = (Key.k, false)
+    var moveNext: (key: UInt16, shift: Bool) = (Key.j, true)
+    var movePrev: (key: UInt16, shift: Bool) = (Key.k, true)
     var workspaceNext: (key: UInt16, shift: Bool) = (Key.l, false)
     var workspacePrev: (key: UInt16, shift: Bool) = (Key.h, false)
     var swapMaster: (key: UInt16, shift: Bool) = (Key.return, false)
@@ -191,6 +193,8 @@ package struct Config {
         if let bindings = toml["bindings"] as? [String: Any] {
             applyBinding(bindings, "focus_next", to: &config.bindings.focusNext)
             applyBinding(bindings, "focus_prev", to: &config.bindings.focusPrev)
+            applyBinding(bindings, "move_next", to: &config.bindings.moveNext)
+            applyBinding(bindings, "move_prev", to: &config.bindings.movePrev)
             applyBinding(bindings, "workspace_next", to: &config.bindings.workspaceNext)
             applyBinding(bindings, "workspace_prev", to: &config.bindings.workspacePrev)
             applyBinding(bindings, "swap_master", to: &config.bindings.swapMaster)

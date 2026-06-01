@@ -21,6 +21,10 @@ enum ConfigTests {
             master_ratio = 0.6
             default_layout = "tile"
             modifier = "control"
+
+            [bindings]
+            move_next = "shift+l"
+            move_prev = "shift+h"
             """)
 
             check(Config.shared.workspaceCount == 4, "loads workspace count")
@@ -28,6 +32,8 @@ enum ConfigTests {
             check(abs(Config.shared.masterRatio - 0.6) < 0.001, "loads master ratio")
             check(Config.shared.defaultLayout == .tile, "loads default layout")
             check(Config.shared.modifier == .maskControl, "loads modifier")
+            check(Config.shared.bindings.moveNext == (Key.l, true), "loads move next binding")
+            check(Config.shared.bindings.movePrev == (Key.h, true), "loads move prev binding")
         }
 
         do {
