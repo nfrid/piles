@@ -6,7 +6,7 @@ BUNDLE_ID = com.piles.app
 CODESIGN_IDENTITY ?= -
 CODESIGN_REQUIREMENTS ?= =designated => identifier "$(BUNDLE_ID)"
 
-.PHONY: build debug test check install clean dist benchmark
+.PHONY: build debug test check install start clean dist benchmark
 
 build:
 	swift build --product piles -c release
@@ -30,6 +30,13 @@ install: build
 	cp $(BUILD_DIR)/$(APP_NAME) $(INSTALL_DIR)/Contents/MacOS/
 	codesign --force --sign "$(CODESIGN_IDENTITY)" --requirements '$(CODESIGN_REQUIREMENTS)' $(INSTALL_DIR)
 	@echo "updated $(INSTALL_DIR)"
+
+start: install
+	@if pgrep -x "$(APP_NAME)" >/dev/null; then \
+		pkill -TERM -x "$(APP_NAME)"; \
+		while pgrep -x "$(APP_NAME)" >/dev/null; do sleep 0.1; done; \
+	fi
+	open "$(INSTALL_DIR)"
 
 dist: build
 	rm -rf $(BUNDLE)
