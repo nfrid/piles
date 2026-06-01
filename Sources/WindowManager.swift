@@ -211,6 +211,7 @@ enum WindowManager {
         var result: [TrackedWindow] = []
         for app in NSWorkspace.shared.runningApplications {
             guard app.activationPolicy == .regular else { continue }
+            guard !app.isHidden else { continue }
             let pid = app.processIdentifier
             let appRef = AXUIElementCreateApplication(pid)
 
@@ -225,6 +226,7 @@ enum WindowManager {
     }
 
     static func windows(pid: pid_t) -> [TrackedWindow]? {
+        guard !isAppHidden(pid: pid) else { return [] }
         let appRef = AXUIElementCreateApplication(pid)
 
         var windowsValue: AnyObject?
@@ -233,6 +235,10 @@ enum WindowManager {
         else { return nil }
 
         return trackedWindows(pid: pid, windows: windows)
+    }
+
+    static func isAppHidden(pid: pid_t) -> Bool {
+        NSRunningApplication(processIdentifier: pid)?.isHidden ?? false
     }
 
     static func trackedWindows(pid: pid_t, windows: [AXUIElement]) -> [TrackedWindow] {

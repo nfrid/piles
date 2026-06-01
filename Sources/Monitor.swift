@@ -192,7 +192,7 @@ package final class Monitor {
         removeWindows { window in
             let stale = window.pid == pid && !current.contains(window)
             guard stale else { return false }
-            let remove = !window.isTrackable()
+            let remove = WindowManager.isAppHidden(pid: pid) || !window.isTrackable()
             DebugLog.write("monitor \(displayID) stale pid=\(pid) remove=\(remove) window=\(DebugLog.describe(window))")
             return remove
         }

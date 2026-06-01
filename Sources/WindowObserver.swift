@@ -44,6 +44,24 @@ package final class WindowObserver {
             WorkspaceManager.shared.followExternalFocus(pid: app.processIdentifier)
         }
 
+        nc.addObserver(
+            forName: NSWorkspace.didHideApplicationNotification,
+            object: nil, queue: .main
+        ) { note in
+            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+            WorkspaceManager.shared.syncWindows(pid: app.processIdentifier, windows: [])
+        }
+
+        nc.addObserver(
+            forName: NSWorkspace.didUnhideApplicationNotification,
+            object: nil, queue: .main
+        ) { note in
+            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                  app.activationPolicy == .regular
+            else { return }
+            WindowObserver.shared.trySyncWindows(pid: app.processIdentifier, attempt: 0)
+        }
+
         for app in NSWorkspace.shared.runningApplications {
             guard app.activationPolicy == .regular else { continue }
             let pid = app.processIdentifier
