@@ -142,19 +142,16 @@ package final class Monitor {
         for ws in 0..<workspaces.count {
             guard let i = workspaces[ws].firstIndex(of: window) else { continue }
             let current = workspaces[ws][i]
-            if current.hasElement(window) {
-                if current.group != window.group || !current.hasSameMembers(window) {
-                    workspaces[ws][i] = window
-                    return .replaced
-                }
-                return .unchanged
+            if current.group != window.group || !current.hasSameMembers(window) {
+                workspaces[ws][i] = window
+                return .replaced
             }
-            if current.isTileable() {
-                if current.group == window.group && !current.hasSameMembers(window) {
-                    workspaces[ws][i] = window
-                    return .replaced
-                }
-                return .unchanged
+            return .unchanged
+        }
+
+        for ws in 0..<workspaces.count {
+            guard let i = workspaces[ws].firstIndex(where: { $0.group == window.group && !$0.isTileable() }) else {
+                continue
             }
             workspaces[ws][i] = window
             return .replaced

@@ -49,10 +49,7 @@ struct TrackedWindow: Equatable {
     }
 
     static func == (lhs: TrackedWindow, rhs: TrackedWindow) -> Bool {
-        if lhs.hasElement(rhs) {
-            return true
-        }
-        return lhs.group == rhs.group
+        lhs.hasElement(rhs)
     }
 
     func hasElement(_ other: TrackedWindow) -> Bool {
@@ -309,8 +306,6 @@ enum WindowManager {
 }
 
 private struct WindowCandidate {
-    private static let minOverlap: CGFloat = 0.88
-
     let element: AXUIElement
     let window: AXUIElement
     let frame: CGRect
@@ -326,14 +321,6 @@ private struct WindowCandidate {
     }
 
     func matches(_ other: WindowCandidate) -> Bool {
-        group == other.group || overlap(frame, other.frame) >= Self.minOverlap
-    }
-
-    private func overlap(_ lhs: CGRect, _ rhs: CGRect) -> CGFloat {
-        let area = min(lhs.width * lhs.height, rhs.width * rhs.height)
-        guard area > 0 else { return 0 }
-        let intersection = lhs.intersection(rhs)
-        guard !intersection.isNull else { return 0 }
-        return max(0, intersection.width * intersection.height) / area
+        CFEqual(window, other.window)
     }
 }
