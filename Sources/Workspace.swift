@@ -386,7 +386,7 @@ package final class WorkspaceManager {
             for workspaceIndex in monitor.workspaces.indices {
                 for windowIndex in monitor.workspaces[workspaceIndex].indices {
                     let window = monitor.workspaces[workspaceIndex][windowIndex]
-                    guard window.pid == pid, window.isTileable() else { continue }
+                    guard window.pid == pid, window.isTrackable() else { continue }
 
                     guard result == nil else { return nil }
                     result = (

@@ -181,7 +181,7 @@ package final class Monitor {
         removeWindows { window in
             let stale = window.pid == pid && !current.contains(window)
             guard stale else { return false }
-            let remove = !window.isTileable()
+            let remove = !window.isTrackable()
             DebugLog.write("monitor \(displayID) stale pid=\(pid) remove=\(remove) window=\(DebugLog.describe(window))")
             return remove
         }
@@ -195,6 +195,7 @@ package final class Monitor {
     func focusPrev() { focusOffset(-1) }
 
     private func focusOffset(_ offset: Int) {
+        guard !activeWorkspaceIsFullscreen else { return }
         let windows = workspaces[active]
         guard windows.count > 1,
               let focused = WindowManager.focusedWindow(),
@@ -210,6 +211,7 @@ package final class Monitor {
     }
 
     func swapMaster() {
+        guard !activeWorkspaceIsFullscreen else { return }
         guard workspaces[active].count > 1 else { return }
         guard let focused = WindowManager.focusedWindow(),
               let i = workspaces[active].firstIndex(of: focused),
@@ -259,9 +261,12 @@ package final class Monitor {
     func retile() -> CGRect {
         cleanActiveWorkspace()
         let screen = WindowManager.screenFrame(for: self.screen)
+        guard !activeWorkspaceIsFullscreen else { return screen }
+
+        let tileableWindows = workspaces[active].filter { $0.isTileable() }
         ignoreGeometryUntil = ProcessInfo.processInfo.systemUptime + Self.geometrySuppressionDelay
         Tiler.tile(
-            windows: workspaces[active],
+            windows: tileableWindows,
             screen: screen,
             layout: layouts[active],
             settings: LayoutSettings(masterRatio: Config.shared.masterRatio)
@@ -272,14 +277,16 @@ package final class Monitor {
     private func cleanActiveWorkspace() {
         var windows: [TrackedWindow] = []
         for window in workspaces[active] {
-            guard window.isTileable(), !windows.contains(window) else { continue }
+            guard window.isTrackable(), !windows.contains(window) else { continue }
             windows.append(window)
         }
         workspaces[active] = windows
     }
 
     private func activeWorkspaceMatchesLayout(tolerance: CGFloat) -> Bool {
-        let windows = workspaces[active]
+        guard !activeWorkspaceIsFullscreen else { return true }
+
+        let windows = workspaces[active].filter { $0.isTileable() }
         let screen = WindowManager.screenFrame(for: self.screen)
         let frames = Tiler.calculateFrames(
             count: windows.count,
@@ -295,6 +302,14 @@ package final class Monitor {
         }
 
         return true
+    }
+
+    private var activeWorkspaceIsFullscreen: Bool {
+        activeFullscreenIndex != nil
+    }
+
+    private var activeFullscreenIndex: Int? {
+        workspaces[active].firstIndex { $0.isFullscreen() }
     }
 
     private func framesMatch(_ lhs: CGRect, _ rhs: CGRect, tolerance: CGFloat) -> Bool {
@@ -364,7 +379,7 @@ package final class Monitor {
     func restoreFocusedWindow() {
         let windows = workspaces[active]
         guard !windows.isEmpty else { return }
-        let idx = min(focusedIndices[active], windows.count - 1)
+        let idx = activeFullscreenIndex ?? min(focusedIndices[active], windows.count - 1)
         let target = windows[idx]
         target.focus()
         if layouts[active] == .monocle {
@@ -376,6 +391,7 @@ package final class Monitor {
         let screen = WindowManager.screenFrame(for: self.screen)
         for ws in workspaces {
             for win in ws {
+                guard !win.isFullscreen() else { continue }
                 guard let frame = win.getFrame() else { continue }
                 win.setFrame(Self.framePreservingSizeInsideScreen(frame, screen: screen))
             }

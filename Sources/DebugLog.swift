@@ -28,7 +28,7 @@ enum DebugLog {
         let title = window.title()
             .map { $0.replacingOccurrences(of: "\n", with: " ") }
             ?? ""
-        return "pid=\(window.pid) tileable=\(window.isTileable()) frame=\(frame) title=\"\(title)\""
+        return "pid=\(window.pid) tileable=\(window.isTileable()) fullscreen=\(window.isFullscreen()) frame=\(frame) title=\"\(title)\""
     }
 
     static func describe(_ windows: [TrackedWindow]) -> String {
