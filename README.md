@@ -35,8 +35,8 @@ relaunch.
   and total window count, e.g. `2/5`
 - **workspace navigation** - option+h/l jumps to the previous/next occupied
   workspace; add shift to move the focused window there
-- **move-and-follow workspace keys** - option+1-9 moves the focused window to
-  that workspace and switches to it
+- **workspace keys** - option+1-9 switches workspaces; add shift to move the
+  focused window there and follow it
 - **menubar indicator** - badge widgets show active workspace and occupied ones
 - **custom keybindings** - configure built-in bindings and custom shell
   commands via `~/.config/piles/config.toml`

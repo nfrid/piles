@@ -71,7 +71,11 @@ package final class Hotkeys {
         if let number = config.numberKeys[keyCode] {
             let index = number - 1
             DispatchQueue.main.async {
-                WorkspaceManager.shared.moveActiveWindowAndSwitchTo(index)
+                if hasShift {
+                    WorkspaceManager.shared.moveActiveWindowAndSwitchTo(index)
+                } else {
+                    WorkspaceManager.shared.switchTo(index)
+                }
             }
             return nil
         }
