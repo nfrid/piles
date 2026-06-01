@@ -374,16 +374,27 @@ package final class Monitor {
 
     func restoreAllWindows() {
         let screen = WindowManager.screenFrame(for: self.screen)
-        let center = CGPoint(
-            x: screen.origin.x + screen.width / 4,
-            y: screen.origin.y + screen.height / 4
-        )
-        let size = CGSize(width: screen.width / 2, height: screen.height / 2)
-
         for ws in workspaces {
             for win in ws {
-                win.setFrame(CGRect(origin: center, size: size))
+                guard let frame = win.getFrame() else { continue }
+                win.setFrame(Self.framePreservingSizeInsideScreen(frame, screen: screen))
             }
         }
+    }
+
+    package static func framePreservingSizeInsideScreen(_ frame: CGRect, screen: CGRect) -> CGRect {
+        CGRect(
+            origin: CGPoint(
+                x: clampedOrigin(frame.minX, length: frame.width, min: screen.minX, max: screen.maxX),
+                y: clampedOrigin(frame.minY, length: frame.height, min: screen.minY, max: screen.maxY)
+            ),
+            size: frame.size
+        )
+    }
+
+    private static func clampedOrigin(_ origin: CGFloat, length: CGFloat, min: CGFloat, max: CGFloat) -> CGFloat {
+        guard origin.isFinite, length.isFinite, min.isFinite, max.isFinite else { return min }
+        guard length <= max - min else { return min }
+        return Swift.min(Swift.max(origin, min), max - length)
     }
 }

@@ -92,6 +92,35 @@ enum TilerTests {
             check(frames[1].width == 1440, "explicit master ratio controls stack width")
         }
 
+        do {
+            let frame = CGRect(x: 200, y: 120, width: 640, height: 480)
+            let restored = Monitor.framePreservingSizeInsideScreen(frame, screen: screen)
+            check(restored == frame, "restore keeps visible frame unchanged")
+        }
+
+        do {
+            let frame = CGRect(x: -240, y: -80, width: 640, height: 480)
+            let restored = Monitor.framePreservingSizeInsideScreen(frame, screen: screen)
+            check(restored.origin == .zero, "restore clamps frame above and left of screen")
+            check(restored.size == frame.size, "restore preserves size when clamping top-left")
+        }
+
+        do {
+            let frame = CGRect(x: 1800, y: 900, width: 640, height: 480)
+            let restored = Monitor.framePreservingSizeInsideScreen(frame, screen: screen)
+            check(restored.origin.x == 1280, "restore clamps frame right edge")
+            check(restored.origin.y == 600, "restore clamps frame bottom edge")
+            check(restored.size == frame.size, "restore preserves size when clamping bottom-right")
+        }
+
+        do {
+            let frame = CGRect(x: -1920, y: 1079, width: 960, height: 540)
+            let restored = Monitor.framePreservingSizeInsideScreen(frame, screen: screen)
+            check(restored.origin.x == 0, "restore brings hidden workspace window back to screen x")
+            check(restored.origin.y == 540, "restore brings hidden workspace window back to screen y")
+            check(restored.size == frame.size, "restore keeps hidden workspace window size")
+        }
+
         return (passed, failed)
     }
 }
