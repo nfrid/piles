@@ -212,9 +212,12 @@ private final class MonocleBarView: NSVisualEffectView {
         let stack = NSStackView()
         stack.orientation = .horizontal
         stack.alignment = .centerY
+        stack.distribution = .gravityAreas
         stack.spacing = Self.spacing
         stack.edgeInsets = NSEdgeInsets(top: Self.inset, left: Self.inset, bottom: Self.inset, right: Self.inset)
         stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.setContentHuggingPriority(.required, for: .horizontal)
+        stack.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         for index in items.indices {
             stack.addArrangedSubview(MonocleBarItemView(item: items[index], focused: index == focusedIndex))
@@ -222,8 +225,9 @@ private final class MonocleBarView: NSVisualEffectView {
 
         addSubview(stack)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: trailingAnchor),
+            stack.centerXAnchor.constraint(equalTo: centerXAnchor),
+            stack.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
             stack.topAnchor.constraint(equalTo: topAnchor),
             stack.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
@@ -250,6 +254,8 @@ private final class MonocleBarItemView: NSView {
     init(item: MonocleBarItem, focused: Bool) {
         self.focused = focused
         super.init(frame: .zero)
+        setContentHuggingPriority(.required, for: .horizontal)
+        setContentCompressionResistancePriority(.required, for: .horizontal)
         wantsLayer = true
         layer?.cornerRadius = 5
         layer?.borderWidth = focused ? 0 : 1
@@ -263,6 +269,7 @@ private final class MonocleBarItemView: NSView {
         title.lineBreakMode = .byTruncatingTail
         title.maximumNumberOfLines = 1
         title.textColor = focused ? .black : .white.withAlphaComponent(0.88)
+        title.setContentHuggingPriority(.required, for: .horizontal)
         title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         let stack = NSStackView(views: [title])
@@ -270,6 +277,7 @@ private final class MonocleBarItemView: NSView {
         stack.alignment = .centerY
         stack.edgeInsets = NSEdgeInsets(top: 0, left: 7, bottom: 0, right: 8)
         stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.setContentHuggingPriority(.required, for: .horizontal)
 
         addSubview(stack)
         NSLayoutConstraint.activate([
