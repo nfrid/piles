@@ -1,5 +1,5 @@
 import CoreGraphics
-@testable import ParketCore
+@testable import PilesCore
 
 enum WindowGroupTests {
     static func runAll() -> (passed: Int, failed: Int) {

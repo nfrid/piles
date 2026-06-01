@@ -19,7 +19,7 @@ package final class Hotkeys {
             callback: Hotkeys.callback,
             userInfo: nil
         ) else {
-            fputs("parket: failed to create event tap (check Input Monitoring permission)\n", stderr)
+            fputs("piles: failed to create event tap (check Input Monitoring permission)\n", stderr)
             exit(1)
         }
 
@@ -71,11 +71,7 @@ package final class Hotkeys {
         if let number = config.numberKeys[keyCode] {
             let index = number - 1
             DispatchQueue.main.async {
-                if hasShift {
-                    WorkspaceManager.shared.moveActiveWindowTo(index)
-                } else {
-                    WorkspaceManager.shared.switchTo(index)
-                }
+                WorkspaceManager.shared.moveActiveWindowAndSwitchTo(index)
             }
             return nil
         }
@@ -96,6 +92,18 @@ package final class Hotkeys {
         }
         if keyCode == b.moveMonitorNext.key && hasShift == b.moveMonitorNext.shift {
             DispatchQueue.main.async { WorkspaceManager.shared.moveWindowToMonitor(offset: 1) }
+            return nil
+        }
+        if keyCode == b.workspacePrev.key && (hasShift || hasShift == b.workspacePrev.shift) {
+            DispatchQueue.main.async {
+                WorkspaceManager.shared.switchToOccupied(offset: -1, movingFocusedWindow: hasShift)
+            }
+            return nil
+        }
+        if keyCode == b.workspaceNext.key && (hasShift || hasShift == b.workspaceNext.shift) {
+            DispatchQueue.main.async {
+                WorkspaceManager.shared.switchToOccupied(offset: 1, movingFocusedWindow: hasShift)
+            }
             return nil
         }
         if keyCode == b.lastWorkspace.key && hasShift == b.lastWorkspace.shift {

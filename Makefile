@@ -1,19 +1,19 @@
-APP_NAME = parket
+APP_NAME = piles
 BUNDLE = $(APP_NAME).app
 INSTALL_DIR = /Applications/$(BUNDLE)
 BUILD_DIR = .build/release
-BUNDLE_ID = com.parket.app
+BUNDLE_ID = com.piles.app
 CODESIGN_IDENTITY ?= -
 CODESIGN_REQUIREMENTS ?= =designated => identifier "$(BUNDLE_ID)"
 
 .PHONY: build test check install clean dist benchmark
 
 build:
-	swift build --product parket -c release
+	swift build --product piles -c release
 
 test:
-	swift build --product parket-tests
-	.build/debug/parket-tests
+	swift build --product piles-tests
+	.build/debug/piles-tests
 
 check: test build
 

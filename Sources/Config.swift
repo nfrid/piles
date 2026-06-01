@@ -97,6 +97,8 @@ package enum Key {
 package struct BuiltinBindings {
     var focusNext: (key: UInt16, shift: Bool) = (Key.j, false)
     var focusPrev: (key: UInt16, shift: Bool) = (Key.k, false)
+    var workspaceNext: (key: UInt16, shift: Bool) = (Key.l, false)
+    var workspacePrev: (key: UInt16, shift: Bool) = (Key.h, false)
     var swapMaster: (key: UInt16, shift: Bool) = (Key.return, false)
     var toggleLayout: (key: UInt16, shift: Bool) = (Key.m, false)
     var focusMonitorPrev: (key: UInt16, shift: Bool) = (Key.comma, false)
@@ -126,13 +128,13 @@ package struct Config {
     }
 
     package static func load() {
-        let path = NSString("~/.config/parket/config.toml").expandingTildeInPath
+        let path = NSString("~/.config/piles/config.toml").expandingTildeInPath
         guard FileManager.default.fileExists(atPath: path) else { return }
 
         guard let data = FileManager.default.contents(atPath: path),
               let text = String(data: data, encoding: .utf8)
         else {
-            fputs("parket: failed to read config file\n", stderr)
+            fputs("piles: failed to read config file\n", stderr)
             return
         }
 
@@ -140,7 +142,7 @@ package struct Config {
         do {
             toml = try Toml.parse(text)
         } catch {
-            fputs("parket: config parse error: \(error)\n", stderr)
+            fputs("piles: config parse error: \(error)\n", stderr)
             return
         }
 
@@ -160,13 +162,15 @@ package struct Config {
             case "option": config.modifier = .maskAlternate
             case "control": config.modifier = .maskControl
             case "command": config.modifier = .maskCommand
-            default: fputs("parket: unknown modifier '\(mod)', using option\n", stderr)
+            default: fputs("piles: unknown modifier '\(mod)', using option\n", stderr)
             }
         }
 
         if let bindings = toml["bindings"] as? [String: Any] {
             applyBinding(bindings, "focus_next", to: &config.bindings.focusNext)
             applyBinding(bindings, "focus_prev", to: &config.bindings.focusPrev)
+            applyBinding(bindings, "workspace_next", to: &config.bindings.workspaceNext)
+            applyBinding(bindings, "workspace_prev", to: &config.bindings.workspacePrev)
             applyBinding(bindings, "swap_master", to: &config.bindings.swapMaster)
             applyBinding(bindings, "toggle_layout", to: &config.bindings.toggleLayout)
             applyBinding(bindings, "focus_monitor_prev", to: &config.bindings.focusMonitorPrev)
@@ -183,7 +187,7 @@ package struct Config {
                 else { return nil }
                 let (keyCode, shift) = parseKeyString(keyStr)
                 guard let code = keyCode else {
-                    fputs("parket: unknown key '\(keyStr)' in custom binding\n", stderr)
+                    fputs("piles: unknown key '\(keyStr)' in custom binding\n", stderr)
                     return nil
                 }
                 return Binding(key: code, shift: shift, command: command)
@@ -208,7 +212,7 @@ package struct Config {
         guard let value = dict[name] as? String else { return }
         let (keyCode, shift) = parseKeyString(value)
         guard let code = keyCode else {
-            fputs("parket: unknown key '\(value)' for binding '\(name)'\n", stderr)
+            fputs("piles: unknown key '\(value)' for binding '\(name)'\n", stderr)
             return
         }
         binding = (code, shift)

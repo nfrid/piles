@@ -88,6 +88,40 @@ package final class Monitor {
         }
     }
 
+    func moveActiveWindowAndSwitchTo(_ index: Int) {
+        guard index >= 0, index < Config.shared.workspaceCount else { return }
+        guard index != active else {
+            restoreFocusedWindow()
+            return
+        }
+        guard let focused = WindowManager.focusedWindow(),
+              let i = workspaces[active].firstIndex(of: focused)
+        else {
+            switchTo(index)
+            return
+        }
+
+        let moved = focused.keepingMembers(from: workspaces[active][i])
+        workspaces[active].remove(at: i)
+        workspaces[index].insert(moved, at: 0)
+        focusedIndices[index] = 0
+        switchTo(index)
+        moved.focus()
+    }
+
+    func nextOccupiedWorkspace(offset: Int) -> Int? {
+        guard offset != 0, Config.shared.workspaceCount > 1 else { return nil }
+        let count = Config.shared.workspaceCount
+        var index = active
+        for _ in 1..<count {
+            index = (index + offset + count) % count
+            if !workspaces[index].isEmpty {
+                return index
+            }
+        }
+        return nil
+    }
+
     @discardableResult
     func insertWindow(_ window: TrackedWindow) -> Bool {
         guard updateExistingWindow(window) == .missing else { return false }

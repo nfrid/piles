@@ -47,8 +47,23 @@ package final class WorkspaceManager {
         switchTo(target)
     }
 
+    func switchToOccupied(offset: Int, movingFocusedWindow: Bool) {
+        guard let target = focusedMonitor.nextOccupiedWorkspace(offset: offset) else { return }
+        if movingFocusedWindow {
+            focusedMonitor.moveActiveWindowAndSwitchTo(target)
+        } else {
+            focusedMonitor.switchTo(target)
+        }
+        StatusBar.shared.update()
+    }
+
     func moveActiveWindowTo(_ index: Int) {
         focusedMonitor.moveActiveWindowTo(index)
+        StatusBar.shared.update()
+    }
+
+    func moveActiveWindowAndSwitchTo(_ index: Int) {
+        focusedMonitor.moveActiveWindowAndSwitchTo(index)
         StatusBar.shared.update()
     }
 
@@ -296,7 +311,7 @@ package final class WorkspaceManager {
             monitor.retile()
         }
         StatusBar.shared.update()
-        fputs("parket: config reloaded\n", stderr)
+        fputs("piles: config reloaded\n", stderr)
     }
 
     package func restoreAllWindows() {

@@ -1,6 +1,6 @@
 import AppKit
 import ApplicationServices
-import ParketCore
+import PilesCore
 
 func checkAccessibility() -> Bool {
     let options = [kAXTrustedCheckOptionPrompt.takeRetainedValue(): true] as CFDictionary
@@ -24,8 +24,8 @@ app.setActivationPolicy(.accessory)
 
 guard checkAccessibility() else {
     let alert = NSAlert()
-    alert.messageText = "parket requires Accessibility permission"
-    alert.informativeText = "grant access in System Settings -> Privacy & Security -> Accessibility, then relaunch parket."
+    alert.messageText = "piles requires Accessibility permission"
+    alert.informativeText = "grant access in System Settings -> Privacy & Security -> Accessibility, then relaunch piles."
     alert.alertStyle = .warning
     alert.addButton(withTitle: "open System Settings")
     alert.addButton(withTitle: "quit")
@@ -55,5 +55,5 @@ NotificationCenter.default.addObserver(
     WorkspaceManager.shared.handleScreenChange()
 }
 
-fputs("parket: running\n", stderr)
+fputs("piles: running\n", stderr)
 app.run()

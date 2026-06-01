@@ -1,5 +1,5 @@
-# parket configuration
-# copy to ~/.config/parket/config.toml
+# piles configuration
+# copy to ~/.config/piles/config.toml
 
 # number of workspaces (1-9)
 # workspace_count = 9
@@ -18,6 +18,8 @@
 # [bindings]
 # focus_next = "j"
 # focus_prev = "k"
+# workspace_next = "l"
+# workspace_prev = "h"
 # swap_master = "return"
 # toggle_layout = "m"
 # focus_monitor_prev = "comma"

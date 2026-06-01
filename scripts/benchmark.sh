@@ -17,20 +17,20 @@ die() { echo "error: $1" >&2; exit 1; }
 warn() { echo "warning: $1" >&2; }
 
 detect_wm() {
-    local parket_pid aerospace_pid
-    parket_pid=$(pgrep -x parket 2>/dev/null || true)
+    local piles_pid aerospace_pid
+    piles_pid=$(pgrep -x piles 2>/dev/null || true)
     aerospace_pid=$(pgrep -x AeroSpace 2>/dev/null || true)
 
-    if [[ -n "$parket_pid" && -n "$aerospace_pid" ]]; then
-        die "both parket and aerospace are running. stop one first"
+    if [[ -n "$piles_pid" && -n "$aerospace_pid" ]]; then
+        die "both piles and aerospace are running. stop one first"
     fi
-    if [[ -z "$parket_pid" && -z "$aerospace_pid" ]]; then
-        die "neither parket nor aerospace is running"
+    if [[ -z "$piles_pid" && -z "$aerospace_pid" ]]; then
+        die "neither piles nor aerospace is running"
     fi
 
-    if [[ -n "$parket_pid" ]]; then
-        WM_NAME="parket"
-        WM_PID="$parket_pid"
+    if [[ -n "$piles_pid" ]]; then
+        WM_NAME="piles"
+        WM_PID="$piles_pid"
     else
         WM_NAME="aerospace"
         WM_PID="$aerospace_pid"

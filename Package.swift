@@ -2,11 +2,11 @@
 import PackageDescription
 
 let package = Package(
-    name: "parket",
+    name: "piles",
     platforms: [.macOS(.v14)],
     targets: [
         .target(
-            name: "ParketCore",
+            name: "PilesCore",
             path: "Sources",
             linkerSettings: [
                 .linkedFramework("AppKit"),
@@ -15,13 +15,13 @@ let package = Package(
             ]
         ),
         .executableTarget(
-            name: "parket",
-            dependencies: ["ParketCore"],
+            name: "piles",
+            dependencies: ["PilesCore"],
             path: "Entry"
         ),
         .executableTarget(
-            name: "parket-tests",
-            dependencies: ["ParketCore"],
+            name: "piles-tests",
+            dependencies: ["PilesCore"],
             path: "Tests"
         ),
     ]

@@ -1,5 +1,5 @@
 import CoreGraphics
-@testable import ParketCore
+@testable import PilesCore
 
 enum TilerPerformanceTests {
     static let screen = CGRect(x: 0, y: 0, width: 1920, height: 1080)
