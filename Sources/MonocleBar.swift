@@ -6,12 +6,25 @@ package final class MonocleBar {
     private let height: CGFloat = 34
     private let horizontalMargin: CGFloat = 12
     private let bottomMargin: CGFloat = 10
+    private let animationDuration: TimeInterval = 0.12
     private var panels: [CGDirectDisplayID: NSPanel] = [:]
     private var lastState: MonocleBarState?
+    private var optionHeld = false
 
     private init() {}
 
+    package func setOptionHeld(_ held: Bool) {
+        guard optionHeld != held else { return }
+        optionHeld = held
+        update()
+    }
+
     package func update() {
+        guard optionHeld else {
+            hideAll()
+            return
+        }
+
         let ws = WorkspaceManager.shared
         guard let state = MonocleBarState.capture(ws) else {
             hideAll()
@@ -22,14 +35,14 @@ package final class MonocleBar {
         hidePanels(except: state.displayID)
         guard state != lastState else {
             repositionPanel(displayID: state.displayID, screen: state.screen, contentWidth: state.contentWidth)
+            showPanel(displayID: state.displayID, screen: state.screen, contentWidth: state.contentWidth)
             return
         }
         lastState = state
 
         let panel = panel(for: state.displayID)
         panel.contentView = MonocleBarView(items: state.items, focusedIndex: state.focusedIndex)
-        position(panel, screen: state.screen, contentWidth: state.contentWidth)
-        panel.orderFrontRegardless()
+        showPanel(displayID: state.displayID, screen: state.screen, contentWidth: state.contentWidth)
     }
 
     private func panel(for displayID: CGDirectDisplayID) -> NSPanel {
@@ -59,28 +72,74 @@ package final class MonocleBar {
         position(panel, screen: screen, contentWidth: contentWidth)
     }
 
-    private func position(_ panel: NSPanel, screen: NSScreen, contentWidth: CGFloat) {
+    private func visibleFrame(screen: NSScreen, contentWidth: CGFloat) -> NSRect {
         let visible = screen.visibleFrame
         let maxWidth = max(160, visible.width - horizontalMargin * 2)
         let width = min(maxWidth, max(160, contentWidth))
-        let frame = NSRect(
+        return NSRect(
             x: visible.midX - width / 2,
             y: visible.minY + bottomMargin,
             width: width,
             height: height
         )
+    }
+
+    private func hiddenFrame(screen: NSScreen, contentWidth: CGFloat) -> NSRect {
+        var frame = visibleFrame(screen: screen, contentWidth: contentWidth)
+        frame.origin.y = screen.visibleFrame.minY - height
+        return frame
+    }
+
+    private func position(_ panel: NSPanel, screen: NSScreen, contentWidth: CGFloat) {
+        let frame = visibleFrame(screen: screen, contentWidth: contentWidth)
         panel.setFrame(frame, display: true)
+    }
+
+    private func showPanel(displayID: CGDirectDisplayID, screen: NSScreen, contentWidth: CGFloat) {
+        let panel = panel(for: displayID)
+        let target = visibleFrame(screen: screen, contentWidth: contentWidth)
+        if !panel.isVisible {
+            panel.alphaValue = 0
+            panel.setFrame(hiddenFrame(screen: screen, contentWidth: contentWidth), display: false)
+            panel.orderFrontRegardless()
+        }
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = animationDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            panel.animator().setFrame(target, display: true)
+            panel.animator().alphaValue = 1
+        }
     }
 
     private func hidePanels(except displayID: CGDirectDisplayID) {
         for (id, panel) in panels where id != displayID {
-            panel.orderOut(nil)
+            hide(panel, cancelIfOptionHeld: false)
         }
     }
 
     private func hideAll() {
+        lastState = nil
         for panel in panels.values {
+            hide(panel, cancelIfOptionHeld: true)
+        }
+    }
+
+    private func hide(_ panel: NSPanel, cancelIfOptionHeld: Bool) {
+        guard panel.isVisible else { return }
+        var target = panel.frame
+        target.origin.y = panel.screen?.visibleFrame.minY ?? target.minY - height
+        target.origin.y -= height
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = animationDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            panel.animator().setFrame(target, display: true)
+            panel.animator().alphaValue = 0
+        } completionHandler: {
+            guard !cancelIfOptionHeld || !self.optionHeld else { return }
             panel.orderOut(nil)
+            panel.alphaValue = 1
         }
     }
 }
@@ -107,9 +166,7 @@ private struct MonocleBarState: Equatable {
         let windows = monitor.workspaces[monitor.active]
         guard !windows.isEmpty else { return nil }
 
-        let items = windows.enumerated().map { index, window in
-            MonocleBarItem(number: index + 1, title: label(for: window))
-        }
+        let items = windows.map { MonocleBarItem(title: label(for: $0)) }
         let focusedIndex = min(monitor.focusedIndices[monitor.active], windows.count - 1)
         return MonocleBarState(
             displayID: monitor.displayID,
@@ -134,7 +191,6 @@ private struct MonocleBarState: Equatable {
 }
 
 private struct MonocleBarItem: Equatable {
-    let number: Int
     let title: String
 }
 
@@ -143,7 +199,6 @@ private final class MonocleBarView: NSVisualEffectView {
     private static let minItemWidth: CGFloat = 54
     private static let spacing: CGFloat = 6
     private static let inset: CGFloat = 7
-    private static let numberWidth: CGFloat = 18
 
     init(items: [MonocleBarItem], focusedIndex: Int) {
         super.init(frame: .zero)
@@ -181,7 +236,7 @@ private final class MonocleBarView: NSVisualEffectView {
         let font = NSFont.systemFont(ofSize: 12, weight: .medium)
         let widths = items.map { item in
             let textWidth = (item.title as NSString).size(withAttributes: [.font: font]).width
-            return min(maxItemWidth, max(minItemWidth, numberWidth + textWidth + 20))
+            return min(maxItemWidth, max(minItemWidth, textWidth + 20))
         }
         let itemWidth = widths.reduce(0, +)
         let spacingWidth = max(0, CGFloat(items.count - 1)) * spacing
@@ -203,12 +258,6 @@ private final class MonocleBarItemView: NSView {
             ? NSColor.white.withAlphaComponent(0.92).cgColor
             : NSColor.black.withAlphaComponent(0.18).cgColor
 
-        let number = NSTextField(labelWithString: "\(item.number)")
-        number.alignment = .center
-        number.font = .monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
-        number.textColor = focused ? .black : .white.withAlphaComponent(0.76)
-        number.setContentCompressionResistancePriority(.required, for: .horizontal)
-
         let title = NSTextField(labelWithString: item.title)
         title.font = .systemFont(ofSize: 12, weight: .medium)
         title.lineBreakMode = .byTruncatingTail
@@ -216,16 +265,14 @@ private final class MonocleBarItemView: NSView {
         title.textColor = focused ? .black : .white.withAlphaComponent(0.88)
         title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        let stack = NSStackView(views: [number, title])
+        let stack = NSStackView(views: [title])
         stack.orientation = .horizontal
         stack.alignment = .centerY
-        stack.spacing = 5
         stack.edgeInsets = NSEdgeInsets(top: 0, left: 7, bottom: 0, right: 8)
         stack.translatesAutoresizingMaskIntoConstraints = false
 
         addSubview(stack)
         NSLayoutConstraint.activate([
-            number.widthAnchor.constraint(equalToConstant: 14),
             heightAnchor.constraint(equalToConstant: 20),
             widthAnchor.constraint(greaterThanOrEqualToConstant: 54),
             widthAnchor.constraint(lessThanOrEqualToConstant: 220),

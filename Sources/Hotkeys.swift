@@ -13,7 +13,9 @@ package final class Hotkeys {
     }
 
     package func start() {
-        let mask: CGEventMask = (1 << CGEventType.keyDown.rawValue)
+        let mask: CGEventMask =
+            (1 << CGEventType.keyDown.rawValue) |
+            (1 << CGEventType.flagsChanged.rawValue)
 
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
@@ -42,6 +44,14 @@ package final class Hotkeys {
         }
 
         let flags = event.flags
+        if type == .flagsChanged {
+            let optionHeld = flags.contains(.maskAlternate)
+            DispatchQueue.main.async {
+                MonocleBar.shared.setOptionHeld(optionHeld)
+            }
+            return passThrough(event)
+        }
+
         let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
 
         let config = Config.shared
