@@ -32,6 +32,8 @@ package final class StatusBar: NSObject {
     }
 
     func update() {
+        defer { MonocleBar.shared.update() }
+
         let ws = WorkspaceManager.shared
         let state = StatusState.capture(ws)
         guard state != lastState else { return }
@@ -52,13 +54,6 @@ package final class StatusBar: NSObject {
         if ws.monitors.count > 1 {
             let monitorNumber = ws.focusedMonitorIndex + 1
             views.append(LayoutIndicatorView(text: "\(monitorNumber):", fontSize: fontSize))
-        }
-
-        let layout = monitor.layouts[monitor.active]
-        if layout == .monocle {
-            let windowCount = monitor.workspaces[monitor.active].count
-            let currentWindow = windowCount == 0 ? 0 : min(monitor.focusedIndices[monitor.active] + 1, windowCount)
-            views.append(LayoutIndicatorView(text: "\(currentWindow)/\(windowCount)", fontSize: fontSize))
         }
 
         for i in 0..<Config.shared.workspaceCount {

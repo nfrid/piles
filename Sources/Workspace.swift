@@ -123,10 +123,12 @@ package final class WorkspaceManager {
 
     func focusNext() {
         focusedMonitor.focusNext()
+        MonocleBar.shared.update()
     }
 
     func focusPrev() {
         focusedMonitor.focusPrev()
+        MonocleBar.shared.update()
     }
 
     func swapMaster() {
