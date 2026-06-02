@@ -49,6 +49,26 @@ enum WorkspaceWindows {
         return (index % count + count) % count
     }
 
+    static func moveIndex(_ sourceIndex: Int, offset: Int, count: Int) -> Int {
+        wrappedIndex(sourceIndex + offset, count: count)
+    }
+
+    static func moving<T>(_ items: [T], from sourceIndex: Int, offset: Int) -> (items: [T], movedIndex: Int) {
+        guard items.indices.contains(sourceIndex), items.count > 1 else {
+            return (items, sourceIndex)
+        }
+
+        let targetIndex = moveIndex(sourceIndex, offset: offset, count: items.count)
+        guard targetIndex != sourceIndex else {
+            return (items, sourceIndex)
+        }
+
+        var moved = items
+        let item = moved.remove(at: sourceIndex)
+        moved.insert(item, at: targetIndex)
+        return (moved, targetIndex)
+    }
+
     static func framePreservingSizeInsideScreen(_ frame: CGRect, screen: CGRect) -> CGRect {
         CGRect(
             origin: CGPoint(
@@ -400,9 +420,9 @@ package final class Monitor {
               let i = windows.firstIndex(of: focused)
         else { return }
 
-        let targetIndex = WorkspaceWindows.wrappedIndex(i + offset, count: windows.count)
-
-        workspaces[active].swapAt(i, targetIndex)
+        let moved = WorkspaceWindows.moving(windows, from: i, offset: offset)
+        let targetIndex = moved.movedIndex
+        workspaces[active] = moved.items
         focusedIndices[active] = targetIndex
         retile()
         workspaces[active][targetIndex].focus()
@@ -632,6 +652,14 @@ package final class Monitor {
 
     static func wrappedIndex(_ index: Int, count: Int) -> Int {
         WorkspaceWindows.wrappedIndex(index, count: count)
+    }
+
+    static func windowsByMoving(
+        _ windows: [TrackedWindow],
+        from sourceIndex: Int,
+        offset: Int
+    ) -> (items: [TrackedWindow], movedIndex: Int) {
+        WorkspaceWindows.moving(windows, from: sourceIndex, offset: offset)
     }
 
     package static func framePreservingSizeInsideScreen(_ frame: CGRect, screen: CGRect) -> CGRect {
