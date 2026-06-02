@@ -4,11 +4,13 @@ package final class StatusBar: NSObject {
     package static let shared = StatusBar()
 
     private let statusItem: NSStatusItem
+    private let menu: NSMenu
     private let stackView: NSStackView
     private var lastState: StatusState?
 
     private override init() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        menu = NSMenu()
         stackView = NSStackView()
         super.init()
 
@@ -16,7 +18,6 @@ package final class StatusBar: NSObject {
         stackView.edgeInsets = NSEdgeInsets(top: 0, left: 4, bottom: 0, right: 4)
         stackView.translatesAutoresizingMaskIntoConstraints = false
 
-        let menu = NSMenu()
         let reloadItem = NSMenuItem(title: "Reload Config", action: #selector(reloadConfig), keyEquivalent: "r")
         reloadItem.target = self
         menu.addItem(reloadItem)
@@ -24,7 +25,6 @@ package final class StatusBar: NSObject {
         let quitItem = NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
-        statusItem.menu = menu
         installStackView()
 
         update()
@@ -36,6 +36,16 @@ package final class StatusBar: NSObject {
 
     @objc private func quit() {
         NSApplication.shared.terminate(nil)
+    }
+
+    @objc private func statusBarRightClicked(_ sender: Any?) {
+        showContextMenu(from: statusItem.button)
+    }
+
+    fileprivate func showContextMenu(from view: NSView?) {
+        guard let view else { return }
+        let point = NSPoint(x: 0, y: view.bounds.height)
+        menu.popUp(positioning: nil, at: point, in: view)
     }
 
     func update() {
@@ -51,7 +61,7 @@ package final class StatusBar: NSObject {
         let fontSize = font.pointSize
 
         guard !ws.monitors.isEmpty else {
-            views.append(BadgeView(number: 1, fontSize: fontSize, active: true))
+            views.append(BadgeView(workspaceIndex: 0, number: 1, fontSize: fontSize, active: true))
             applyViews(views)
             return
         }
@@ -69,11 +79,11 @@ package final class StatusBar: NSObject {
 
             guard isActive || hasWindows else { continue }
 
-            views.append(BadgeView(number: i + 1, fontSize: fontSize, active: isActive))
+            views.append(BadgeView(workspaceIndex: i, number: i + 1, fontSize: fontSize, active: isActive))
         }
 
         if views.isEmpty {
-            views.append(BadgeView(number: 1, fontSize: fontSize, active: true))
+            views.append(BadgeView(workspaceIndex: 0, number: 1, fontSize: fontSize, active: true))
         }
 
         applyViews(views)
@@ -82,6 +92,9 @@ package final class StatusBar: NSObject {
     private func installStackView() {
         guard let button = statusItem.button else { return }
         button.title = ""
+        button.sendAction(on: [.rightMouseUp])
+        button.target = self
+        button.action = #selector(statusBarRightClicked)
         button.addSubview(stackView)
         NSLayoutConstraint.activate([
             stackView.centerYAnchor.constraint(equalTo: button.centerYAnchor),
@@ -124,11 +137,13 @@ private func drawCenteredText(_ text: String, in bounds: NSRect, fontSize: CGFlo
 }
 
 private final class BadgeView: NSView {
+    private let workspaceIndex: Int
     private let number: Int
     private let fontSize: CGFloat
     private let active: Bool
 
-    init(number: Int, fontSize: CGFloat, active: Bool) {
+    init(workspaceIndex: Int, number: Int, fontSize: CGFloat, active: Bool) {
+        self.workspaceIndex = workspaceIndex
         self.number = number
         self.fontSize = fontSize
         self.active = active
@@ -140,6 +155,39 @@ private final class BadgeView: NSView {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas {
+            removeTrackingArea(area)
+        }
+        addTrackingArea(NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        ))
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        NSCursor.pointingHand.push()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        NSCursor.pop()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        if event.buttonNumber != 0 {
+            StatusBar.shared.showContextMenu(from: self)
+            return
+        }
+        if event.modifierFlags.contains(.shift) {
+            WorkspaceManager.shared.moveActiveWindowAndSwitchTo(workspaceIndex)
+        } else {
+            WorkspaceManager.shared.switchTo(workspaceIndex)
+        }
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }

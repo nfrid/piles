@@ -1,0 +1,44 @@
+{
+  "configurations": [
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:piles}",
+      "name": "Debug piles-tests",
+      "target": "piles-tests",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug piles-tests"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:piles}",
+      "name": "Release piles-tests",
+      "target": "piles-tests",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release piles-tests"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:piles}",
+      "name": "Debug piles",
+      "target": "piles",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug piles"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:piles}",
+      "name": "Release piles",
+      "target": "piles",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release piles"
+    }
+  ]
+}
