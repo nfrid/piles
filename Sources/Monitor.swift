@@ -231,8 +231,7 @@ package final class Monitor {
               let i = windows.firstIndex(of: focused)
         else { return }
 
-        let targetIndex = i + offset
-        guard windows.indices.contains(targetIndex) else { return }
+        let targetIndex = Self.wrappedIndex(i + offset, count: windows.count)
 
         workspaces[active].swapAt(i, targetIndex)
         focusedIndices[active] = targetIndex
@@ -502,6 +501,11 @@ package final class Monitor {
             ? Swift.min(adjustedFocus, result.count - 1)
             : Swift.min(Swift.max(adjustedFocus, 0), result.count - 1)
         return result
+    }
+
+    static func wrappedIndex(_ index: Int, count: Int) -> Int {
+        guard count > 0 else { return 0 }
+        return (index % count + count) % count
     }
 
     package static func framePreservingSizeInsideScreen(_ frame: CGRect, screen: CGRect) -> CGRect {

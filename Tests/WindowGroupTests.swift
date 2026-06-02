@@ -58,6 +58,11 @@ enum WindowGroupTests {
             check(focusedIndex == 0, "focused removal selects replacement at same position")
         }
 
+        do {
+            check(Monitor.wrappedIndex(-1, count: 3) == 2, "moving first window prev wraps to last")
+            check(Monitor.wrappedIndex(3, count: 3) == 0, "moving last window next wraps to first")
+        }
+
         return (passed, failed)
     }
 
