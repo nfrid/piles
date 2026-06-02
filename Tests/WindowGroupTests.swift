@@ -89,6 +89,70 @@ enum WindowGroupTests {
             check(Monitor.wrappedIndex(3, count: 3) == 0, "moving last window next wraps to first")
         }
 
+        do {
+            var state = MonitorState(count: 3, defaultLayout: .monocle)
+            let previous = state.activate(2)
+            check(previous == 0, "state activation returns previous workspace")
+            check(state.active == 2, "state activation changes active workspace")
+            check(state.previousActive == 0, "state activation records previous workspace")
+            check(state.activate(2) == nil, "state activation ignores current workspace")
+            check(state.activate(4) == nil, "state activation rejects out-of-range workspace")
+        }
+
+        do {
+            var state = MonitorState(count: 3, defaultLayout: .monocle)
+            let a = testWindow(pid: 3001)
+            let b = testWindow(pid: 3002)
+            let c = testWindow(pid: 3003)
+
+            state.insertWindow(a)
+            state.insertWindow(b, workspace: 2, position: 5)
+            state.insertWindow(c, workspace: 2, position: 1)
+
+            check(state.workspaces[0].map(\.pid) == [3001], "state inserts into active workspace by default")
+            check(state.workspaces[1].map(\.pid) == [3003, 3002], "state clamps insertion positions")
+        }
+
+        do {
+            var state = MonitorState(count: 3, defaultLayout: .monocle)
+            let a = testWindow(pid: 3101)
+            let b = testWindow(pid: 3102)
+            let c = testWindow(pid: 3103)
+            state.workspaces[0] = [a, b, c]
+            state.focusedIndices[0] = 2
+
+            let result = state.removeWindows { $0.pid == 3102 }
+
+            check(result.changed, "state reports removed windows")
+            check(result.activeChanged, "state reports active workspace removal")
+            check(state.workspaces[0].map(\.pid) == [3101, 3103], "state removes matching windows")
+            check(state.focusedIndices[0] == 1, "state repairs focus index after removal")
+        }
+
+        do {
+            var state = MonitorState(count: 4, defaultLayout: .tile)
+            let a = testWindow(pid: 3201)
+            let b = testWindow(pid: 3202)
+            let c = testWindow(pid: 3203)
+            state.workspaces[0] = [a]
+            state.workspaces[2] = [b]
+            state.workspaces[3] = [c]
+            state.active = 3
+            state.previousActive = 2
+
+            state.resize(to: 2, defaultLayout: .monocle)
+
+            check(state.workspaces.count == 2, "state shrinks workspace count")
+            check(state.active == 1, "state clamps active workspace on shrink")
+            check(state.previousActive == 1, "state clamps previous workspace on shrink")
+            check(state.workspaces[1].map(\.pid) == [3202, 3203], "state preserves overflow windows on shrink")
+
+            state.resize(to: 4, defaultLayout: .monocle)
+
+            check(state.workspaces.count == 4, "state grows workspace count")
+            check(state.layouts[2] == .monocle, "state uses supplied layout for new workspaces")
+        }
+
         return (passed, failed)
     }
 
