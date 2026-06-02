@@ -1,3 +1,4 @@
+import ApplicationServices
 import CoreGraphics
 @testable import PilesCore
 
@@ -33,6 +34,38 @@ enum WindowGroupTests {
             check(left != right, "pid separates equal frames")
         }
 
+        do {
+            let windows = [
+                testWindow(pid: 1001),
+                testWindow(pid: 1002),
+                testWindow(pid: 1003),
+            ]
+            var focusedIndex = 1
+            let remaining = Monitor.windowsAfterRemoving(from: windows, focusedIndex: &focusedIndex) { $0.pid == 1001 }
+            check(remaining.map(\.pid) == [1002, 1003], "removes minimized window")
+            check(focusedIndex == 0, "focused index follows selected window after earlier removal")
+        }
+
+        do {
+            let windows = [
+                testWindow(pid: 1001),
+                testWindow(pid: 1002),
+                testWindow(pid: 1003),
+            ]
+            var focusedIndex = 0
+            let remaining = Monitor.windowsAfterRemoving(from: windows, focusedIndex: &focusedIndex) { $0.pid == 1001 }
+            check(remaining.map(\.pid) == [1002, 1003], "removes focused minimized window")
+            check(focusedIndex == 0, "focused removal selects replacement at same position")
+        }
+
         return (passed, failed)
+    }
+
+    private static func testWindow(pid: pid_t) -> TrackedWindow {
+        TrackedWindow(
+            element: AXUIElementCreateApplication(pid),
+            pid: pid,
+            group: WindowGroupKey(pid: pid, frame: .null)
+        )
     }
 }

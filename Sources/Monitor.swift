@@ -177,9 +177,9 @@ package final class Monitor {
         var needsRetile = false
         var changed = false
         for i in 0..<Config.shared.workspaceCount {
-            let before = workspaces[i].count
-            workspaces[i].removeAll(where: predicate)
-            if workspaces[i].count != before {
+            let before = workspaces[i]
+            workspaces[i] = Self.windowsAfterRemoving(from: before, focusedIndex: &focusedIndices[i], where: predicate)
+            if workspaces[i].count != before.count {
                 changed = true
                 needsRetile = needsRetile || (i == active)
             }
@@ -466,6 +466,42 @@ package final class Monitor {
     private func clampedInsertIndex(_ position: Int?, count: Int) -> Int {
         guard let position else { return 0 }
         return Swift.min(Swift.max(position - 1, 0), count)
+    }
+
+    static func windowsAfterRemoving(
+        from windows: [TrackedWindow],
+        focusedIndex: inout Int,
+        where predicate: (TrackedWindow) -> Bool
+    ) -> [TrackedWindow] {
+        var result: [TrackedWindow] = []
+        result.reserveCapacity(windows.count)
+
+        var removedBeforeFocus = 0
+        var removedFocused = false
+        let originalFocus = Swift.min(Swift.max(focusedIndex, 0), max(windows.count - 1, 0))
+
+        for index in windows.indices {
+            if predicate(windows[index]) {
+                if index < originalFocus {
+                    removedBeforeFocus += 1
+                } else if index == originalFocus {
+                    removedFocused = true
+                }
+                continue
+            }
+            result.append(windows[index])
+        }
+
+        guard !result.isEmpty else {
+            focusedIndex = 0
+            return result
+        }
+
+        let adjustedFocus = originalFocus - removedBeforeFocus
+        focusedIndex = removedFocused
+            ? Swift.min(adjustedFocus, result.count - 1)
+            : Swift.min(Swift.max(adjustedFocus, 0), result.count - 1)
+        return result
     }
 
     package static func framePreservingSizeInsideScreen(_ frame: CGRect, screen: CGRect) -> CGRect {
