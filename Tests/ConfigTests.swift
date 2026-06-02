@@ -82,6 +82,43 @@ enum ConfigTests {
             check(Config.shared.modifier == .maskAlternate, "rejects invalid modifier")
         }
 
+        do {
+            var diagnostics: [String] = []
+            let config = ConfigParser.parse(text: """
+            workspace_count = 0
+
+            [bindings]
+            focus_next = "notakey"
+
+            [[custom]]
+            key = "shift+nope"
+            command = "true"
+
+            [[assign]]
+            position = 0
+            """) { diagnostics.append($0) }
+
+            check(config != nil, "invalid values still produce fallback config")
+            check(diagnostics.contains("workspace_count must be between 1 and 9, using 9"), "captures workspace diagnostic")
+            check(diagnostics.contains("unknown key 'notakey' for binding 'focus_next'"), "captures binding diagnostic")
+            check(diagnostics.contains("unknown key 'shift+nope' in custom binding"), "captures custom binding diagnostic")
+            check(diagnostics.contains("assignment needs app, bundle_id, title, or title_contains"), "captures assignment diagnostic")
+        }
+
+        do {
+            let before = Config.shared
+            var diagnostics: [String] = []
+            Config.load(text: "workspace_count =")
+            check(Config.shared.workspaceCount == before.workspaceCount, "load keeps existing config on parse error")
+
+            let parsed = ConfigParser.parse(text: "workspace_count =") {
+                diagnostics.append($0)
+            }
+            check(parsed == nil, "parser returns nil on TOML parse error")
+            check(diagnostics.count == 1, "parser reports parse error once")
+            check(diagnostics[0].hasPrefix("config parse error:"), "parser captures parse error diagnostic")
+        }
+
         Config.shared = Config()
         return (passed, failed)
     }

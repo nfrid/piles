@@ -181,9 +181,9 @@ package struct Config {
     package var assignments: [WindowAssignment] = []
     package var bindings = BuiltinBindings()
 
-    package private(set) var numberKeys: [UInt16: Int] = buildNumberKeys(count: 9)
+    package fileprivate(set) var numberKeys: [UInt16: Int] = buildNumberKeys(count: 9)
 
-    private static func buildNumberKeys(count: Int) -> [UInt16: Int] {
+    fileprivate static func buildNumberKeys(count: Int) -> [UInt16: Int] {
         var map: [UInt16: Int] = [:]
         for i in 0..<count { map[Key.numberKeys[i]] = i + 1 }
         return map
@@ -207,99 +207,144 @@ package struct Config {
     }
 
     package static func load(text: String) {
-        let toml: [String: Any]
-        do {
-            toml = try Toml.parse(text)
-        } catch {
-            fputs("piles: config parse error: \(error)\n", stderr)
+        guard let config = ConfigParser.parse(text: text, diagnose: {
+            fputs("piles: \($0)\n", stderr)
+        }) else {
             return
         }
-
-        var config = Config()
-
-        if let count = toml["workspace_count"] as? Int, count >= 1, count <= 9 {
-            config.workspaceCount = count
-            config.numberKeys = buildNumberKeys(count: count)
-        } else if toml["workspace_count"] != nil {
-            fputs("piles: workspace_count must be between 1 and 9, using 9\n", stderr)
-        }
-
-        if let ratio = toml["master_ratio"] as? Double {
-            if ratio >= 0, ratio <= 1 {
-                config.masterRatio = CGFloat(ratio)
-            } else {
-                fputs("piles: master_ratio must be between 0.0 and 1.0, using 0.55\n", stderr)
-            }
-        }
-
-        if let layout = toml["default_layout"] as? String {
-            switch layout {
-            case "tile": config.defaultLayout = .tile
-            case "monocle": config.defaultLayout = .monocle
-            default: fputs("piles: unknown default_layout '\(layout)', using monocle\n", stderr)
-            }
-        }
-
-        if let mod = toml["modifier"] as? String {
-            switch mod {
-            case "option": config.modifier = .maskAlternate
-            case "control": config.modifier = .maskControl
-            case "command": config.modifier = .maskCommand
-            default: fputs("piles: unknown modifier '\(mod)', using option\n", stderr)
-            }
-        }
-
-        if let bindings = toml["bindings"] as? [String: Any] {
-            applyBindings(bindings, to: &config.bindings)
-        }
-
-        if let customs = toml["custom"] as? [[String: Any]] {
-            config.customBindings = customs.compactMap { entry in
-                guard let keyStr = entry["key"] as? String,
-                      let command = entry["command"] as? String
-                else { return nil }
-                let (keyCode, shift) = parseKeyString(keyStr)
-                guard let code = keyCode else {
-                    fputs("piles: unknown key '\(keyStr)' in custom binding\n", stderr)
-                    return nil
-                }
-                return Binding(key: code, shift: shift, command: command)
-            }
-        }
-
-        if let assignments = toml["assign"] as? [[String: Any]] {
-            config.assignments = assignments.compactMap { entry in
-                let app = entry["app"] as? String
-                let bundleID = entry["bundle_id"] as? String
-                let title = entry["title"] as? String
-                let titleContains = entry["title_contains"] as? String
-
-                guard app != nil || bundleID != nil || title != nil || titleContains != nil else {
-                    fputs("piles: assignment needs app, bundle_id, title, or title_contains\n", stderr)
-                    return nil
-                }
-
-                let monitor = positiveInt(entry["monitor"], name: "monitor")
-                let workspace = workspaceIndex(entry["workspace"], max: config.workspaceCount)
-                let position = positiveInt(entry["position"], name: "position")
-
-                return WindowAssignment(
-                    app: app,
-                    bundleID: bundleID,
-                    title: title,
-                    titleContains: titleContains,
-                    monitor: monitor,
-                    workspace: workspace,
-                    position: position
-                )
-            }
-        }
-
         shared = config
     }
 
     package func assignment(app: String?, bundleID: String?, title: String?) -> WindowAssignment? {
         assignments.first { $0.matches(app: app, bundleID: bundleID, title: title) }
+    }
+}
+
+package enum ConfigParser {
+    package typealias DiagnosticSink = (String) -> Void
+
+    package static func parse(text: String, diagnose: DiagnosticSink = { _ in }) -> Config? {
+        let toml: [String: Any]
+        do {
+            toml = try Toml.parse(text)
+        } catch {
+            diagnose("config parse error: \(error)")
+            return nil
+        }
+
+        return parse(toml: toml, diagnose: diagnose)
+    }
+
+    static func parse(toml: [String: Any], diagnose: DiagnosticSink = { _ in }) -> Config {
+        var config = Config()
+
+        applyWorkspaceCount(toml["workspace_count"], to: &config, diagnose: diagnose)
+        applyMasterRatio(toml["master_ratio"], to: &config, diagnose: diagnose)
+        applyDefaultLayout(toml["default_layout"], to: &config, diagnose: diagnose)
+        applyModifier(toml["modifier"], to: &config, diagnose: diagnose)
+
+        if let bindings = toml["bindings"] as? [String: Any] {
+            applyBindings(bindings, to: &config.bindings, diagnose: diagnose)
+        }
+
+        if let customs = toml["custom"] as? [[String: Any]] {
+            config.customBindings = parseCustomBindings(customs, diagnose: diagnose)
+        }
+
+        if let assignments = toml["assign"] as? [[String: Any]] {
+            config.assignments = parseAssignments(
+                assignments,
+                workspaceCount: config.workspaceCount,
+                diagnose: diagnose
+            )
+        }
+
+        return config
+    }
+
+    private static func applyWorkspaceCount(_ value: Any?, to config: inout Config, diagnose: DiagnosticSink) {
+        guard let value else { return }
+        guard let count = value as? Int, count >= 1, count <= 9 else {
+            diagnose("workspace_count must be between 1 and 9, using 9")
+            return
+        }
+        config.workspaceCount = count
+        config.numberKeys = Config.buildNumberKeys(count: count)
+    }
+
+    private static func applyMasterRatio(_ value: Any?, to config: inout Config, diagnose: DiagnosticSink) {
+        guard let value else { return }
+        guard let ratio = value as? Double, ratio >= 0, ratio <= 1 else {
+            diagnose("master_ratio must be between 0.0 and 1.0, using 0.55")
+            return
+        }
+        config.masterRatio = CGFloat(ratio)
+    }
+
+    private static func applyDefaultLayout(_ value: Any?, to config: inout Config, diagnose: DiagnosticSink) {
+        guard let layout = value as? String else { return }
+        switch layout {
+        case "tile": config.defaultLayout = .tile
+        case "monocle": config.defaultLayout = .monocle
+        default: diagnose("unknown default_layout '\(layout)', using monocle")
+        }
+    }
+
+    private static func applyModifier(_ value: Any?, to config: inout Config, diagnose: DiagnosticSink) {
+        guard let modifier = value as? String else { return }
+        switch modifier {
+        case "option": config.modifier = .maskAlternate
+        case "control": config.modifier = .maskControl
+        case "command": config.modifier = .maskCommand
+        default: diagnose("unknown modifier '\(modifier)', using option")
+        }
+    }
+
+    private static func parseCustomBindings(_ entries: [[String: Any]], diagnose: DiagnosticSink) -> [Binding] {
+        entries.compactMap { entry in
+            guard let keyStr = entry["key"] as? String,
+                  let command = entry["command"] as? String
+            else { return nil }
+
+            let (keyCode, shift) = parseKeyString(keyStr)
+            guard let code = keyCode else {
+                diagnose("unknown key '\(keyStr)' in custom binding")
+                return nil
+            }
+            return Binding(key: code, shift: shift, command: command)
+        }
+    }
+
+    private static func parseAssignments(
+        _ entries: [[String: Any]],
+        workspaceCount: Int,
+        diagnose: DiagnosticSink
+    ) -> [WindowAssignment] {
+        entries.compactMap { entry in
+            let app = entry["app"] as? String
+            let bundleID = entry["bundle_id"] as? String
+            let title = entry["title"] as? String
+            let titleContains = entry["title_contains"] as? String
+
+            guard app != nil || bundleID != nil || title != nil || titleContains != nil else {
+                diagnose("assignment needs app, bundle_id, title, or title_contains")
+                return nil
+            }
+
+            let monitor = positiveInt(entry["monitor"], name: "monitor", diagnose: diagnose)
+            let workspace = workspaceIndex(entry["workspace"], max: workspaceCount, diagnose: diagnose)
+            let position = positiveInt(entry["position"], name: "position", diagnose: diagnose)
+
+            return WindowAssignment(
+                app: app,
+                bundleID: bundleID,
+                title: title,
+                titleContains: titleContains,
+                monitor: monitor,
+                workspace: workspace,
+                position: position
+            )
+        }
     }
 
     private static func parseKeyString(_ s: String) -> (key: UInt16?, shift: Bool) {
@@ -310,31 +355,31 @@ package struct Config {
         return (Key.byName[s], false)
     }
 
-    private static func applyBindings(_ dict: [String: Any], to bindings: inout BuiltinBindings) {
+    private static func applyBindings(_ dict: [String: Any], to bindings: inout BuiltinBindings, diagnose: DiagnosticSink) {
         for bindingKey in builtinBindingKeys {
             guard let value = dict[bindingKey.name] as? String else { continue }
             let (keyCode, shift) = parseKeyString(value)
             guard let code = keyCode else {
-                fputs("piles: unknown key '\(value)' for binding '\(bindingKey.name)'\n", stderr)
+                diagnose("unknown key '\(value)' for binding '\(bindingKey.name)'")
                 continue
             }
             bindings[keyPath: bindingKey.keyPath] = (code, shift)
         }
     }
 
-    private static func workspaceIndex(_ value: Any?, max: Int) -> Int? {
+    private static func workspaceIndex(_ value: Any?, max: Int, diagnose: DiagnosticSink) -> Int? {
         guard let workspace = value as? Int else { return nil }
         guard workspace >= 1, workspace <= max else {
-            fputs("piles: assignment workspace must be between 1 and \(max)\n", stderr)
+            diagnose("assignment workspace must be between 1 and \(max)")
             return nil
         }
         return workspace
     }
 
-    private static func positiveInt(_ value: Any?, name: String) -> Int? {
+    private static func positiveInt(_ value: Any?, name: String, diagnose: DiagnosticSink) -> Int? {
         guard let int = value as? Int else { return nil }
         guard int >= 1 else {
-            fputs("piles: assignment \(name) must be at least 1\n", stderr)
+            diagnose("assignment \(name) must be at least 1")
             return nil
         }
         return int
