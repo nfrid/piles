@@ -51,23 +51,38 @@ struct WindowAttributes {
     }
 }
 
+private struct AXElementIdentity: Hashable {
+    let element: AXUIElement
+
+    static func == (lhs: AXElementIdentity, rhs: AXElementIdentity) -> Bool {
+        CFEqual(lhs.element, rhs.element)
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(CFHash(element))
+    }
+}
+
 struct TrackedWindow: Equatable {
     let element: AXUIElement
     let focusElement: AXUIElement
     let members: [AXUIElement]
     let pid: pid_t
     let group: WindowGroupKey
-    private let references: [AXUIElement]
+    private let referenceIdentities: Set<AXElementIdentity>
+    private let memberIdentities: Set<AXElementIdentity>
 
     init(element: AXUIElement, pid: pid_t, members: [AXUIElement] = [], group: WindowGroupKey? = nil) {
         let window = WindowManager.canonicalWindowElement(element) ?? element
         let uniqueMembers = TrackedWindow.unique([window] + members)
+        let uniqueReferences = TrackedWindow.unique([window, element] + uniqueMembers)
         self.element = window
         self.focusElement = element
         self.members = uniqueMembers
         self.pid = pid
         self.group = group ?? WindowGroupKey(pid: pid, frame: WindowManager.frame(of: window) ?? .null)
-        self.references = TrackedWindow.unique([window, element] + uniqueMembers)
+        self.referenceIdentities = Set(uniqueReferences.map(AXElementIdentity.init))
+        self.memberIdentities = Set(uniqueMembers.map(AXElementIdentity.init))
     }
 
     static func == (lhs: TrackedWindow, rhs: TrackedWindow) -> Bool {
@@ -75,18 +90,15 @@ struct TrackedWindow: Equatable {
     }
 
     func hasElement(_ other: TrackedWindow) -> Bool {
-        references.contains { left in
-            other.references.contains { CFEqual(left, $0) }
-        }
+        !referenceIdentities.isDisjoint(with: other.referenceIdentities)
     }
 
     func hasSameMembers(_ other: TrackedWindow) -> Bool {
-        members.count == other.members.count
-            && members.allSatisfy { member in other.members.contains { CFEqual(member, $0) } }
+        memberIdentities == other.memberIdentities
     }
 
     func containsElement(_ element: AXUIElement) -> Bool {
-        references.contains { CFEqual($0, element) }
+        referenceIdentities.contains(AXElementIdentity(element: element))
     }
 
     func getFrame() -> CGRect? {
@@ -177,12 +189,12 @@ struct TrackedWindow: Equatable {
 
     private static func unique(_ elements: [AXUIElement]) -> [AXUIElement] {
         var result: [AXUIElement] = []
-        for element in elements where !result.contains(where: { CFEqual($0, element) }) {
+        var identities: Set<AXElementIdentity> = []
+        for element in elements where identities.insert(AXElementIdentity(element: element)).inserted {
             result.append(element)
         }
         return result
     }
-
 }
 
 enum WindowManager {

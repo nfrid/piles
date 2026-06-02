@@ -35,6 +35,32 @@ enum WindowGroupTests {
         }
 
         do {
+            let left = testWindow(pid: 2001)
+            let right = testWindow(pid: 2001)
+            check(left == right, "equivalent AX elements identify same tracked window")
+            check(left.containsElement(AXUIElementCreateApplication(2001)), "contains equivalent AX reference")
+        }
+
+        do {
+            let a = AXUIElementCreateApplication(2101)
+            let b = AXUIElementCreateApplication(2102)
+            let left = TrackedWindow(
+                element: a,
+                pid: 2100,
+                members: [a, b],
+                group: WindowGroupKey(pid: 2100, frame: .null)
+            )
+            let right = TrackedWindow(
+                element: a,
+                pid: 2100,
+                members: [b, a],
+                group: WindowGroupKey(pid: 2100, frame: .null)
+            )
+            check(left.hasSameMembers(right), "member comparison ignores order")
+            check(left.members.count == 2, "members are deduplicated")
+        }
+
+        do {
             let windows = [
                 testWindow(pid: 1001),
                 testWindow(pid: 1002),
