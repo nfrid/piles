@@ -7,6 +7,65 @@ enum WindowUpdate {
     case unchanged
 }
 
+enum WorkspaceWindows {
+    static func afterRemoving(
+        from windows: [TrackedWindow],
+        focusedIndex: inout Int,
+        where predicate: (TrackedWindow) -> Bool
+    ) -> [TrackedWindow] {
+        var result: [TrackedWindow] = []
+        result.reserveCapacity(windows.count)
+
+        var removedBeforeFocus = 0
+        var removedFocused = false
+        let originalFocus = Swift.min(Swift.max(focusedIndex, 0), max(windows.count - 1, 0))
+
+        for index in windows.indices {
+            if predicate(windows[index]) {
+                if index < originalFocus {
+                    removedBeforeFocus += 1
+                } else if index == originalFocus {
+                    removedFocused = true
+                }
+                continue
+            }
+            result.append(windows[index])
+        }
+
+        guard !result.isEmpty else {
+            focusedIndex = 0
+            return result
+        }
+
+        let adjustedFocus = originalFocus - removedBeforeFocus
+        focusedIndex = removedFocused
+            ? Swift.min(adjustedFocus, result.count - 1)
+            : Swift.min(Swift.max(adjustedFocus, 0), result.count - 1)
+        return result
+    }
+
+    static func wrappedIndex(_ index: Int, count: Int) -> Int {
+        guard count > 0 else { return 0 }
+        return (index % count + count) % count
+    }
+
+    static func framePreservingSizeInsideScreen(_ frame: CGRect, screen: CGRect) -> CGRect {
+        CGRect(
+            origin: CGPoint(
+                x: clampedOrigin(frame.minX, length: frame.width, min: screen.minX, max: screen.maxX),
+                y: clampedOrigin(frame.minY, length: frame.height, min: screen.minY, max: screen.maxY)
+            ),
+            size: frame.size
+        )
+    }
+
+    private static func clampedOrigin(_ origin: CGFloat, length: CGFloat, min: CGFloat, max: CGFloat) -> CGFloat {
+        guard origin.isFinite, length.isFinite, min.isFinite, max.isFinite else { return min }
+        guard length <= max - min else { return min }
+        return Swift.min(Swift.max(origin, min), max - length)
+    }
+}
+
 package final class Monitor {
     private struct ActiveWindowSnapshot {
         let window: TrackedWindow
@@ -187,7 +246,11 @@ package final class Monitor {
         var changed = false
         for i in 0..<Config.shared.workspaceCount {
             let before = workspaces[i]
-            workspaces[i] = Self.windowsAfterRemoving(from: before, focusedIndex: &focusedIndices[i], where: predicate)
+            workspaces[i] = WorkspaceWindows.afterRemoving(
+                from: before,
+                focusedIndex: &focusedIndices[i],
+                where: predicate
+            )
             if workspaces[i].count != before.count {
                 changed = true
                 needsRetile = needsRetile || (i == active)
@@ -240,7 +303,7 @@ package final class Monitor {
               let i = windows.firstIndex(of: focused)
         else { return }
 
-        let targetIndex = Self.wrappedIndex(i + offset, count: windows.count)
+        let targetIndex = WorkspaceWindows.wrappedIndex(i + offset, count: windows.count)
 
         workspaces[active].swapAt(i, targetIndex)
         focusedIndices[active] = targetIndex
@@ -488,7 +551,7 @@ package final class Monitor {
             for win in ws {
                 guard !win.isFullscreen() else { continue }
                 guard let frame = win.getFrame() else { continue }
-                win.setFrame(Self.framePreservingSizeInsideScreen(frame, screen: screen))
+                win.setFrame(WorkspaceWindows.framePreservingSizeInsideScreen(frame, screen: screen))
             }
         }
     }
@@ -508,55 +571,14 @@ package final class Monitor {
         focusedIndex: inout Int,
         where predicate: (TrackedWindow) -> Bool
     ) -> [TrackedWindow] {
-        var result: [TrackedWindow] = []
-        result.reserveCapacity(windows.count)
-
-        var removedBeforeFocus = 0
-        var removedFocused = false
-        let originalFocus = Swift.min(Swift.max(focusedIndex, 0), max(windows.count - 1, 0))
-
-        for index in windows.indices {
-            if predicate(windows[index]) {
-                if index < originalFocus {
-                    removedBeforeFocus += 1
-                } else if index == originalFocus {
-                    removedFocused = true
-                }
-                continue
-            }
-            result.append(windows[index])
-        }
-
-        guard !result.isEmpty else {
-            focusedIndex = 0
-            return result
-        }
-
-        let adjustedFocus = originalFocus - removedBeforeFocus
-        focusedIndex = removedFocused
-            ? Swift.min(adjustedFocus, result.count - 1)
-            : Swift.min(Swift.max(adjustedFocus, 0), result.count - 1)
-        return result
+        WorkspaceWindows.afterRemoving(from: windows, focusedIndex: &focusedIndex, where: predicate)
     }
 
     static func wrappedIndex(_ index: Int, count: Int) -> Int {
-        guard count > 0 else { return 0 }
-        return (index % count + count) % count
+        WorkspaceWindows.wrappedIndex(index, count: count)
     }
 
     package static func framePreservingSizeInsideScreen(_ frame: CGRect, screen: CGRect) -> CGRect {
-        CGRect(
-            origin: CGPoint(
-                x: clampedOrigin(frame.minX, length: frame.width, min: screen.minX, max: screen.maxX),
-                y: clampedOrigin(frame.minY, length: frame.height, min: screen.minY, max: screen.maxY)
-            ),
-            size: frame.size
-        )
-    }
-
-    private static func clampedOrigin(_ origin: CGFloat, length: CGFloat, min: CGFloat, max: CGFloat) -> CGFloat {
-        guard origin.isFinite, length.isFinite, min.isFinite, max.isFinite else { return min }
-        guard length <= max - min else { return min }
-        return Swift.min(Swift.max(origin, min), max - length)
+        WorkspaceWindows.framePreservingSizeInsideScreen(frame, screen: screen)
     }
 }

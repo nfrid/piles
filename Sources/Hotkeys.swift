@@ -1,11 +1,90 @@
 import Cocoa
 import ApplicationServices
 
+package enum HotkeyAction: Equatable {
+    case passThrough
+    case runCommand(String)
+    case switchTo(Int)
+    case moveActiveWindowAndSwitchTo(Int)
+    case focusMonitor(Int)
+    case moveWindowToMonitor(Int)
+    case switchToOccupied(offset: Int, movingFocusedWindow: Bool)
+    case switchToLast
+    case focusNext
+    case focusPrev
+    case moveFocusedWindowNext
+    case moveFocusedWindowPrev
+    case swapMaster
+    case toggleLayout
+}
+
+package struct HotkeyResolver {
+    package init() {}
+
+    package func resolve(keyCode: UInt16, flags: CGEventFlags, config: Config) -> HotkeyAction {
+        if config.modifier == .maskCommand && keyCode == Key.tab && flags.contains(.maskCommand) {
+            return .passThrough
+        }
+
+        let hasModifier = flags.contains(config.modifier)
+        let hasShift = flags.contains(.maskShift)
+        let hasExtraModifiers =
+            (config.modifier != .maskCommand && flags.contains(.maskCommand)) ||
+            (config.modifier != .maskControl && flags.contains(.maskControl)) ||
+            (config.modifier != .maskAlternate && flags.contains(.maskAlternate))
+
+        guard hasModifier, !hasExtraModifiers else {
+            return .passThrough
+        }
+
+        for binding in config.customBindings {
+            guard binding.key == keyCode, binding.shift == hasShift else { continue }
+            return .runCommand(binding.command)
+        }
+
+        if let number = config.numberKeys[keyCode] {
+            let index = number - 1
+            return hasShift ? .moveActiveWindowAndSwitchTo(index) : .switchTo(index)
+        }
+
+        let b = config.bindings
+
+        if matches(keyCode, hasShift, b.focusMonitorPrev) { return .focusMonitor(-1) }
+        if matches(keyCode, hasShift, b.focusMonitorNext) { return .focusMonitor(1) }
+        if matches(keyCode, hasShift, b.moveMonitorPrev) { return .moveWindowToMonitor(-1) }
+        if matches(keyCode, hasShift, b.moveMonitorNext) { return .moveWindowToMonitor(1) }
+        if keyCode == b.workspacePrev.key && (hasShift || hasShift == b.workspacePrev.shift) {
+            return .switchToOccupied(offset: -1, movingFocusedWindow: hasShift)
+        }
+        if keyCode == b.workspaceNext.key && (hasShift || hasShift == b.workspaceNext.shift) {
+            return .switchToOccupied(offset: 1, movingFocusedWindow: hasShift)
+        }
+        if matches(keyCode, hasShift, b.lastWorkspace) { return .switchToLast }
+        if matches(keyCode, hasShift, b.focusNext) { return .focusNext }
+        if matches(keyCode, hasShift, b.focusPrev) { return .focusPrev }
+        if matches(keyCode, hasShift, b.moveNext) { return .moveFocusedWindowNext }
+        if matches(keyCode, hasShift, b.movePrev) { return .moveFocusedWindowPrev }
+        if matches(keyCode, hasShift, b.swapMaster) { return .swapMaster }
+        if matches(keyCode, hasShift, b.toggleLayout) { return .toggleLayout }
+
+        return .passThrough
+    }
+
+    private func matches(
+        _ keyCode: UInt16,
+        _ hasShift: Bool,
+        _ binding: (key: UInt16, shift: Bool)
+    ) -> Bool {
+        keyCode == binding.key && hasShift == binding.shift
+    }
+}
+
 package final class Hotkeys {
     package static let shared = Hotkeys()
 
     private var tap: CFMachPort?
     private var resizingMasterRatio = false
+    private let resolver = HotkeyResolver()
 
     private init() {}
 
@@ -57,14 +136,8 @@ package final class Hotkeys {
         }
 
         let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
-
         let config = Config.shared
-        if config.modifier == .maskCommand && keyCode == Key.tab && flags.contains(.maskCommand) {
-            return passThrough(event)
-        }
-
         let hasModifier = flags.contains(config.modifier)
-        let hasShift = flags.contains(.maskShift)
         let hasExtraModifiers =
             (config.modifier != .maskCommand && flags.contains(.maskCommand)) ||
             (config.modifier != .maskControl && flags.contains(.maskControl)) ||
@@ -107,9 +180,18 @@ package final class Hotkeys {
             return passThrough(event)
         }
 
-        for binding in config.customBindings {
-            guard binding.key == keyCode, binding.shift == hasShift else { continue }
-            let cmd = binding.command
+        return Hotkeys.shared.handle(action: Hotkeys.shared.resolver.resolve(
+            keyCode: keyCode,
+            flags: flags,
+            config: config
+        ), event: event)
+    }
+
+    private func handle(action: HotkeyAction, event: CGEvent) -> Unmanaged<CGEvent>? {
+        switch action {
+        case .passThrough:
+            return Self.passThrough(event)
+        case .runCommand(let cmd):
             DispatchQueue.global(qos: .userInitiated).async {
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: "/bin/sh")
@@ -121,80 +203,52 @@ package final class Hotkeys {
                 }
             }
             return nil
-        }
-
-        if let number = config.numberKeys[keyCode] {
-            let index = number - 1
+        case .switchTo(let index):
             DispatchQueue.main.async {
-                if hasShift {
-                    WorkspaceManager.shared.moveActiveWindowAndSwitchTo(index)
-                } else {
-                    WorkspaceManager.shared.switchTo(index)
-                }
+                WorkspaceManager.shared.switchTo(index)
             }
             return nil
-        }
-
-        let b = config.bindings
-
-        if keyCode == b.focusMonitorPrev.key && hasShift == b.focusMonitorPrev.shift {
-            DispatchQueue.main.async { WorkspaceManager.shared.focusMonitor(offset: -1) }
-            return nil
-        }
-        if keyCode == b.focusMonitorNext.key && hasShift == b.focusMonitorNext.shift {
-            DispatchQueue.main.async { WorkspaceManager.shared.focusMonitor(offset: 1) }
-            return nil
-        }
-        if keyCode == b.moveMonitorPrev.key && hasShift == b.moveMonitorPrev.shift {
-            DispatchQueue.main.async { WorkspaceManager.shared.moveWindowToMonitor(offset: -1) }
-            return nil
-        }
-        if keyCode == b.moveMonitorNext.key && hasShift == b.moveMonitorNext.shift {
-            DispatchQueue.main.async { WorkspaceManager.shared.moveWindowToMonitor(offset: 1) }
-            return nil
-        }
-        if keyCode == b.workspacePrev.key && (hasShift || hasShift == b.workspacePrev.shift) {
+        case .moveActiveWindowAndSwitchTo(let index):
             DispatchQueue.main.async {
-                WorkspaceManager.shared.switchToOccupied(offset: -1, movingFocusedWindow: hasShift)
+                WorkspaceManager.shared.moveActiveWindowAndSwitchTo(index)
             }
             return nil
-        }
-        if keyCode == b.workspaceNext.key && (hasShift || hasShift == b.workspaceNext.shift) {
+        case .focusMonitor(let offset):
+            DispatchQueue.main.async { WorkspaceManager.shared.focusMonitor(offset: offset) }
+            return nil
+        case .moveWindowToMonitor(let offset):
+            DispatchQueue.main.async { WorkspaceManager.shared.moveWindowToMonitor(offset: offset) }
+            return nil
+        case .switchToOccupied(let offset, let movingFocusedWindow):
             DispatchQueue.main.async {
-                WorkspaceManager.shared.switchToOccupied(offset: 1, movingFocusedWindow: hasShift)
+                WorkspaceManager.shared.switchToOccupied(
+                    offset: offset,
+                    movingFocusedWindow: movingFocusedWindow
+                )
             }
             return nil
-        }
-        if keyCode == b.lastWorkspace.key && hasShift == b.lastWorkspace.shift {
+        case .switchToLast:
             DispatchQueue.main.async { WorkspaceManager.shared.switchToLast() }
             return nil
-        }
-        if keyCode == b.focusNext.key && hasShift == b.focusNext.shift {
+        case .focusNext:
             DispatchQueue.main.async { WorkspaceManager.shared.focusNext() }
             return nil
-        }
-        if keyCode == b.focusPrev.key && hasShift == b.focusPrev.shift {
+        case .focusPrev:
             DispatchQueue.main.async { WorkspaceManager.shared.focusPrev() }
             return nil
-        }
-        if keyCode == b.moveNext.key && hasShift == b.moveNext.shift {
+        case .moveFocusedWindowNext:
             DispatchQueue.main.async { WorkspaceManager.shared.moveFocusedWindowNext() }
             return nil
-        }
-        if keyCode == b.movePrev.key && hasShift == b.movePrev.shift {
+        case .moveFocusedWindowPrev:
             DispatchQueue.main.async { WorkspaceManager.shared.moveFocusedWindowPrev() }
             return nil
-        }
-        if keyCode == b.swapMaster.key && hasShift == b.swapMaster.shift {
+        case .swapMaster:
             DispatchQueue.main.async { WorkspaceManager.shared.swapMaster() }
             return nil
-        }
-        if keyCode == b.toggleLayout.key && hasShift == b.toggleLayout.shift {
+        case .toggleLayout:
             DispatchQueue.main.async { WorkspaceManager.shared.toggleLayout() }
             return nil
         }
-
-        return passThrough(event)
     }
 
     private static func onMain<T>(_ work: @escaping () -> T) -> T {

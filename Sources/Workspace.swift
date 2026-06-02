@@ -11,6 +11,11 @@ package final class WorkspaceManager {
         let windowIndex: Int
     }
 
+    private struct LocatedWindow {
+        let window: TrackedWindow
+        let location: WindowLocation
+    }
+
     private static let focusFollowRetryDelay: TimeInterval = 0.015
     private static let focusFollowMaxAttempts = 5
 
@@ -374,53 +379,25 @@ package final class WorkspaceManager {
     }
 
     private func locateWindow(_ window: TrackedWindow) -> WindowLocation? {
-        for monitorIndex in monitors.indices {
-            let monitor = monitors[monitorIndex]
-            for workspaceIndex in monitor.workspaces.indices {
-                if let windowIndex = monitor.workspaces[workspaceIndex].firstIndex(of: window) {
-                    return WindowLocation(
-                        monitorIndex: monitorIndex,
-                        workspaceIndex: workspaceIndex,
-                        windowIndex: windowIndex
-                    )
-                }
-            }
-        }
-        return nil
+        firstLocatedWindow { $0 == window }?.location
     }
 
     private func locateWindow(pid: pid_t, element: AXUIElement) -> WindowLocation? {
-        for monitorIndex in monitors.indices {
-            let monitor = monitors[monitorIndex]
-            for workspaceIndex in monitor.workspaces.indices {
-                for windowIndex in monitor.workspaces[workspaceIndex].indices {
-                    let window = monitor.workspaces[workspaceIndex][windowIndex]
-                    guard window.pid == pid, window.containsElement(element) else { continue }
-                    return WindowLocation(
-                        monitorIndex: monitorIndex,
-                        workspaceIndex: workspaceIndex,
-                        windowIndex: windowIndex
-                    )
-                }
-            }
-        }
-        return nil
+        firstLocatedWindow { window in
+            window.pid == pid && window.containsElement(element)
+        }?.location
     }
 
-    private func singleTrackedWindow(pid: pid_t) -> (window: TrackedWindow, location: WindowLocation)? {
-        var result: (window: TrackedWindow, location: WindowLocation)?
-
+    private func firstLocatedWindow(where predicate: (TrackedWindow) -> Bool) -> LocatedWindow? {
         for monitorIndex in monitors.indices {
             let monitor = monitors[monitorIndex]
             for workspaceIndex in monitor.workspaces.indices {
                 for windowIndex in monitor.workspaces[workspaceIndex].indices {
                     let window = monitor.workspaces[workspaceIndex][windowIndex]
-                    guard window.pid == pid, window.isTrackable() else { continue }
-
-                    guard result == nil else { return nil }
-                    result = (
-                        window,
-                        WindowLocation(
+                    guard predicate(window) else { continue }
+                    return LocatedWindow(
+                        window: window,
+                        location: WindowLocation(
                             monitorIndex: monitorIndex,
                             workspaceIndex: workspaceIndex,
                             windowIndex: windowIndex
@@ -429,8 +406,44 @@ package final class WorkspaceManager {
                 }
             }
         }
+        return nil
+    }
 
-        return result
+    private func singleTrackedWindow(pid: pid_t) -> (window: TrackedWindow, location: WindowLocation)? {
+        var result: LocatedWindow?
+
+        forEachLocatedWindow { located in
+            guard located.window.pid == pid, located.window.isTrackable() else { return true }
+            guard result == nil else {
+                result = nil
+                return false
+            }
+            result = located
+            return true
+        }
+
+        guard let result else { return nil }
+        return (result.window, result.location)
+    }
+
+    private func forEachLocatedWindow(_ body: (LocatedWindow) -> Bool) {
+        for monitorIndex in monitors.indices {
+            let monitor = monitors[monitorIndex]
+            for workspaceIndex in monitor.workspaces.indices {
+                for windowIndex in monitor.workspaces[workspaceIndex].indices {
+                    let window = monitor.workspaces[workspaceIndex][windowIndex]
+                    let located = LocatedWindow(
+                        window: window,
+                        location: WindowLocation(
+                            monitorIndex: monitorIndex,
+                            workspaceIndex: workspaceIndex,
+                            windowIndex: windowIndex
+                        )
+                    )
+                    guard body(located) else { return }
+                }
+            }
+        }
     }
 
     private func monitorForWindow(_ window: TrackedWindow) -> Monitor {
