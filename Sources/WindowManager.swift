@@ -63,6 +63,37 @@ private struct AXElementIdentity: Hashable {
     }
 }
 
+private enum AXClient {
+    @discardableResult
+    static func setAttribute(
+        _ attribute: CFString,
+        value: CFTypeRef,
+        on element: AXUIElement,
+        context: @autoclosure () -> String
+    ) -> Bool {
+        let result = AXUIElementSetAttributeValue(element, attribute, value)
+        guard result == .success else {
+            DebugLog.write("ax set failed result=\(result) attribute=\(attribute) context=\(context())")
+            return false
+        }
+        return true
+    }
+
+    @discardableResult
+    static func performAction(
+        _ action: CFString,
+        on element: AXUIElement,
+        context: @autoclosure () -> String
+    ) -> Bool {
+        let result = AXUIElementPerformAction(element, action)
+        guard result == .success else {
+            DebugLog.write("ax action failed result=\(result) action=\(action) context=\(context())")
+            return false
+        }
+        return true
+    }
+}
+
 struct TrackedWindow: Equatable {
     let element: AXUIElement
     let focusElement: AXUIElement
@@ -109,50 +140,108 @@ struct TrackedWindow: Equatable {
         TrackedWindow(element: focusElement, pid: pid, members: current.members, group: group)
     }
 
-    func setPosition(_ point: CGPoint) {
+    @discardableResult
+    func setPosition(_ point: CGPoint) -> Bool {
         var p = point
-        guard let value = AXValueCreate(.cgPoint, &p) else { return }
-        for member in members {
-            AXUIElementSetAttributeValue(member, kAXPositionAttribute as CFString, value)
+        guard let value = AXValueCreate(.cgPoint, &p) else {
+            DebugLog.write("ax value create failed type=cgPoint pid=\(pid)")
+            return false
         }
+        var success = true
+        for member in members {
+            success = AXClient.setAttribute(
+                kAXPositionAttribute as CFString,
+                value: value,
+                on: member,
+                context: "pid=\(pid) position=(\(Int(point.x)),\(Int(point.y)))"
+            ) && success
+        }
+        return success
     }
 
-    func setSize(_ size: CGSize) {
+    @discardableResult
+    func setSize(_ size: CGSize) -> Bool {
         var s = size
-        guard let value = AXValueCreate(.cgSize, &s) else { return }
+        guard let value = AXValueCreate(.cgSize, &s) else {
+            DebugLog.write("ax value create failed type=cgSize pid=\(pid)")
+            return false
+        }
+        var success = true
         for member in members {
-            AXUIElementSetAttributeValue(member, kAXSizeAttribute as CFString, value)
+            success = AXClient.setAttribute(
+                kAXSizeAttribute as CFString,
+                value: value,
+                on: member,
+                context: "pid=\(pid) size=\(Int(size.width))x\(Int(size.height))"
+            ) && success
         }
+        return success
     }
 
-    func hideOffscreen(_ screen: CGRect) {
-        guard !isFullscreen() else { return }
-        setPosition(CGPoint(x: screen.origin.x + 1 - screen.width, y: screen.maxY - 1))
+    @discardableResult
+    func hideOffscreen(_ screen: CGRect) -> Bool {
+        guard !isFullscreen() else { return false }
+        return setPosition(CGPoint(x: screen.origin.x + 1 - screen.width, y: screen.maxY - 1))
     }
 
-    func setFrame(_ rect: CGRect) {
-        guard isTileable() else { return }
-        setFrameUnchecked(rect)
+    @discardableResult
+    func setFrame(_ rect: CGRect) -> Bool {
+        guard isTileable() else { return false }
+        return setFrameUnchecked(rect)
     }
 
-    func setFrameUnchecked(_ rect: CGRect) {
-        setPosition(rect.origin)
-        setSize(rect.size)
+    @discardableResult
+    func setFrameUnchecked(_ rect: CGRect) -> Bool {
+        let positioned = setPosition(rect.origin)
+        let sized = setSize(rect.size)
+        return positioned && sized
     }
 
-    func focus() {
+    @discardableResult
+    func focus() -> Bool {
+        var success = true
         if let app = NSRunningApplication(processIdentifier: pid) {
-            app.activate()
+            let activated = app.activate()
+            if !activated {
+                DebugLog.write("app activate failed pid=\(pid)")
+            }
+            success = activated && success
         }
-        AXUIElementPerformAction(element, kAXRaiseAction as CFString)
-        AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue)
-        AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, kCFBooleanTrue)
-        AXUIElementSetAttributeValue(focusElement, kAXMainAttribute as CFString, kCFBooleanTrue)
-        AXUIElementSetAttributeValue(focusElement, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        success = AXClient.performAction(
+            kAXRaiseAction as CFString,
+            on: element,
+            context: "pid=\(pid)"
+        ) && success
+        success = AXClient.setAttribute(
+            kAXMainAttribute as CFString,
+            value: kCFBooleanTrue,
+            on: element,
+            context: "pid=\(pid) target=window"
+        ) && success
+        success = AXClient.setAttribute(
+            kAXFocusedAttribute as CFString,
+            value: kCFBooleanTrue,
+            on: element,
+            context: "pid=\(pid) target=window"
+        ) && success
+        success = AXClient.setAttribute(
+            kAXMainAttribute as CFString,
+            value: kCFBooleanTrue,
+            on: focusElement,
+            context: "pid=\(pid) target=focusElement"
+        ) && success
+        success = AXClient.setAttribute(
+            kAXFocusedAttribute as CFString,
+            value: kCFBooleanTrue,
+            on: focusElement,
+            context: "pid=\(pid) target=focusElement"
+        ) && success
+        return success
     }
 
-    func raise() {
-        AXUIElementPerformAction(element, kAXRaiseAction as CFString)
+    @discardableResult
+    func raise() -> Bool {
+        AXClient.performAction(kAXRaiseAction as CFString, on: element, context: "pid=\(pid)")
     }
 
     func isTileable() -> Bool {
