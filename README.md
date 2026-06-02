@@ -1,24 +1,26 @@
 # piles
 
-Highly opinionated and tiny window / workspace manager for MacOS.
+Highly opinionated and tiny window / workspace manager for macOS.
 
 Based on [parket](https://github.com/basuev/parket).
 
 ## For whom
 
 This project is mainly made for myself. Feel free to fork it and make your own.
+It is not trying to be a general purpose tiling window manager.
 
 ## Install
 
-Build from source as I don't intend to publish it to brew:
+Build from source as I don't intend to publish it to brew.
 
 ```bash
 make install
-open /Applications/parket.app
+open /Applications/piles.app
 ```
 
 Grant permissions in System Settings -> Privacy & Security when prompted, then
-relaunch.
+relaunch. You can also use `make start` during development to rebuild,
+reinstall, restart the running app, and open it.
 
 ## Requirements
 
@@ -28,29 +30,116 @@ relaunch.
 
 ## Features
 
-- **workspaces** - up to 9 virtual workspaces via offscreen window hiding
-- **monocle by default** - new workspaces start fullscreen; set
-  `default_layout = "tile"` to use master-stack tiling by default
+- **workspaces** - 1 to 9 virtual workspaces, implemented by moving inactive
+  windows offscreen
+- **monocle by default** - new workspaces use monocle layout; set
+  `default_layout = "tile"` for master-stack tiling by default
 - **master-stack tiling** - dwm-style master/stack layout with configurable
-  master width
+  master width; drag the divider with the modifier key held to resize it
 - **per-workspace layouts** - toggle the active workspace between monocle and
-  tile with option+m
-- **monocle position indicator** - the menu bar shows focused window position
-  and total window count, e.g. `2/5`
-- **workspace navigation** - option+h/l jumps to the previous/next occupied
-  workspace; add shift to move the focused window there
-- **workspace keys** - option+1-9 switches workspaces; add shift to move the
-  focused window there and follow it
-- **menubar indicator** - badge widgets show active workspace and occupied ones
-- **custom keybindings** - configure built-in bindings and custom shell commands
-  via `~/.config/piles/config.toml`
-- **multi-monitor** - per-display workspaces, each monitor has its own workspace
-  set
-- **app switcher follow** - command+tab to a hidden workspace window opens that
-  workspace
-- **window assignment rules** - place windows by app, bundle id, or title via
-  `[[assign]]` entries in `~/.config/piles/config.toml`
-- **crash safety** - all windows restore on exit
+  tile
+- **window focus and ordering** - cycle focus, move the focused window through
+  the stack, and swap the focused window into master
+- **workspace navigation** - jump directly by number, jump to the previous/next
+  occupied workspace, or jump back to the last workspace
+- **move windows around** - move the focused window to a numbered workspace, to
+  the previous/next occupied workspace, or to another monitor
+- **multi-monitor** - each display has its own workspace set; the menubar shows
+  the focused monitor when more than one is connected
+- **menubar indicator** - compact badge widgets show the active workspace and
+  occupied workspaces
+- **monocle switcher** - hold option in monocle layout to show the focused
+  window and its neighbors by title
+- **app switcher follow** - command-tab to a hidden workspace window reveals the
+  workspace that owns it
+- **window assignment rules** - place windows by app, bundle id, exact title, or
+  partial title via `[[assign]]` entries
+- **custom keybindings** - configure built-in bindings, the global modifier, and
+  custom shell commands
+- **config reload** - reload the config from the menubar without restarting
+- **crash safety** - windows are brought back onscreen on quit, SIGTERM, SIGINT,
+  and normal process exit
+
+## Controls
+
+The default modifier is option. You can change it to `control` or `command` in
+`~/.config/piles/config.toml`.
+
+| Keys                                     | Action                                                    |
+| ---------------------------------------- | --------------------------------------------------------- |
+| option+1-9                               | switch to workspace                                       |
+| option+shift+1-9                         | move focused window to workspace and follow it            |
+| option+h / option+l                      | switch to previous / next occupied workspace              |
+| option+shift+h / option+shift+l          | move focused window to previous / next occupied workspace |
+| option+tab                               | switch to last workspace                                  |
+| option+j / option+k                      | focus next / previous window                              |
+| option+shift+j / option+shift+k          | move focused window next / previous                       |
+| option+return                            | swap focused window into master                           |
+| option+m                                 | toggle monocle / tile on the active workspace             |
+| option+comma / option+period             | focus previous / next monitor                             |
+| option+shift+comma / option+shift+period | move focused window to previous / next monitor            |
+| option+shift+return                      | run the default custom command: `open -n -a Terminal`     |
+| option+drag tile divider                 | resize the master area                                    |
+
+## Config
+
+Config is optional and lives at `~/.config/piles/config.toml`. Start from
+`config.example.toml`:
+
+```bash
+mkdir -p ~/.config/piles
+cp config.example.toml ~/.config/piles/config.toml
+```
+
+Useful options:
+
+```toml
+workspace_count = 9
+master_ratio = 0.55
+default_layout = "monocle"
+modifier = "option"
+```
+
+You can remap built-in actions:
+
+```toml
+[bindings]
+focus_next = "j"
+focus_prev = "k"
+toggle_layout = "m"
+last_workspace = "tab"
+```
+
+Add shell commands:
+
+```toml
+[[custom]]
+key = "shift+return"
+command = "open -n -a Terminal"
+```
+
+Assign new windows:
+
+```toml
+[[assign]]
+bundle_id = "com.apple.Safari"
+title_contains = "Developer"
+monitor = 1
+workspace = 2
+position = 1
+```
+
+First matching assignment wins. `monitor`, `workspace`, and `position` are
+1-based.
+
+## Development
+
+```bash
+make test
+make build
+```
+
+The test target is a small executable, not XCTest.
 
 ## License
 
