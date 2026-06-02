@@ -4,11 +4,17 @@ package final class StatusBar: NSObject {
     package static let shared = StatusBar()
 
     private let statusItem: NSStatusItem
+    private let stackView: NSStackView
     private var lastState: StatusState?
 
     private override init() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        stackView = NSStackView()
         super.init()
+
+        stackView.spacing = 4
+        stackView.edgeInsets = NSEdgeInsets(top: 0, left: 4, bottom: 0, right: 4)
+        stackView.translatesAutoresizingMaskIntoConstraints = false
 
         let menu = NSMenu()
         let reloadItem = NSMenuItem(title: "Reload Config", action: #selector(reloadConfig), keyEquivalent: "r")
@@ -19,6 +25,7 @@ package final class StatusBar: NSObject {
         quitItem.target = self
         menu.addItem(quitItem)
         statusItem.menu = menu
+        installStackView()
 
         update()
     }
@@ -72,22 +79,24 @@ package final class StatusBar: NSObject {
         applyViews(views)
     }
 
-    private func applyViews(_ views: [NSView]) {
-        let stack = NSStackView(views: views)
-        stack.spacing = 4
-        stack.edgeInsets = NSEdgeInsets(top: 0, left: 4, bottom: 0, right: 4)
+    private func installStackView() {
+        guard let button = statusItem.button else { return }
+        button.title = ""
+        button.addSubview(stackView)
+        NSLayoutConstraint.activate([
+            stackView.centerYAnchor.constraint(equalTo: button.centerYAnchor),
+            stackView.leadingAnchor.constraint(equalTo: button.leadingAnchor),
+            stackView.trailingAnchor.constraint(equalTo: button.trailingAnchor),
+        ])
+    }
 
-        DispatchQueue.main.async {
-            guard let button = self.statusItem.button else { return }
-            button.title = ""
-            button.subviews.forEach { $0.removeFromSuperview() }
-            stack.translatesAutoresizingMaskIntoConstraints = false
-            button.addSubview(stack)
-            NSLayoutConstraint.activate([
-                stack.centerYAnchor.constraint(equalTo: button.centerYAnchor),
-                stack.leadingAnchor.constraint(equalTo: button.leadingAnchor),
-                stack.trailingAnchor.constraint(equalTo: button.trailingAnchor),
-            ])
+    private func applyViews(_ views: [NSView]) {
+        for view in stackView.arrangedSubviews {
+            stackView.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+        for view in views {
+            stackView.addArrangedSubview(view)
         }
     }
 }
