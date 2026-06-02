@@ -32,20 +32,42 @@ struct WindowFrameKey: Hashable {
     }
 }
 
+struct WindowAttributes {
+    let role: String?
+    let subrole: String?
+    let minimized: Bool
+    let fullscreen: Bool
+
+    var isStandardWindow: Bool {
+        role == kAXWindowRole && subrole == kAXStandardWindowSubrole
+    }
+
+    var isTrackable: Bool {
+        isStandardWindow && !minimized
+    }
+
+    var isTileable: Bool {
+        isTrackable && !fullscreen
+    }
+}
+
 struct TrackedWindow: Equatable {
     let element: AXUIElement
     let focusElement: AXUIElement
     let members: [AXUIElement]
     let pid: pid_t
     let group: WindowGroupKey
+    private let references: [AXUIElement]
 
     init(element: AXUIElement, pid: pid_t, members: [AXUIElement] = [], group: WindowGroupKey? = nil) {
         let window = WindowManager.canonicalWindowElement(element) ?? element
+        let uniqueMembers = TrackedWindow.unique([window] + members)
         self.element = window
         self.focusElement = element
-        self.members = TrackedWindow.unique([window] + members)
+        self.members = uniqueMembers
         self.pid = pid
         self.group = group ?? WindowGroupKey(pid: pid, frame: WindowManager.frame(of: window) ?? .null)
+        self.references = TrackedWindow.unique([window, element] + uniqueMembers)
     }
 
     static func == (lhs: TrackedWindow, rhs: TrackedWindow) -> Bool {
@@ -98,6 +120,10 @@ struct TrackedWindow: Equatable {
 
     func setFrame(_ rect: CGRect) {
         guard isTileable() else { return }
+        setFrameUnchecked(rect)
+    }
+
+    func setFrameUnchecked(_ rect: CGRect) {
         setPosition(rect.origin)
         setSize(rect.size)
     }
@@ -129,6 +155,10 @@ struct TrackedWindow: Equatable {
         WindowManager.isFullscreen(element)
     }
 
+    func attributes() -> WindowAttributes? {
+        WindowManager.attributes(of: element)
+    }
+
     func title() -> String? {
         var value: AnyObject?
         guard AXUIElementCopyAttributeValue(element, kAXTitleAttribute as CFString, &value) == .success else {
@@ -153,9 +183,6 @@ struct TrackedWindow: Equatable {
         return result
     }
 
-    private var references: [AXUIElement] {
-        TrackedWindow.unique([element, focusElement] + members)
-    }
 }
 
 enum WindowManager {
@@ -194,12 +221,12 @@ enum WindowManager {
         return bool
     }
 
-    private static func axWindowAttributes(_ element: AXUIElement) -> (role: String?, subrole: String?, minimized: Bool, fullscreen: Bool)? {
+    static func attributes(of element: AXUIElement) -> WindowAttributes? {
         let role = axStringAttribute(element, kAXRoleAttribute as CFString)
         let subrole = axStringAttribute(element, kAXSubroleAttribute as CFString)
         guard role != nil || subrole != nil else { return nil }
 
-        return (
+        return WindowAttributes(
             role: role,
             subrole: subrole,
             minimized: axBoolAttribute(element, kAXMinimizedAttribute as CFString) ?? false,
@@ -280,27 +307,19 @@ enum WindowManager {
     }
 
     static func isTrackable(_ element: AXUIElement) -> Bool {
-        guard let attrs = axWindowAttributes(element) else { return false }
-        return attrs.role == kAXWindowRole
-            && attrs.subrole == kAXStandardWindowSubrole
-            && !attrs.minimized
+        attributes(of: element)?.isTrackable ?? false
     }
 
     static func isFullscreen(_ element: AXUIElement) -> Bool {
-        axWindowAttributes(element)?.fullscreen ?? false
+        attributes(of: element)?.fullscreen ?? false
     }
 
     static func isTileable(_ element: AXUIElement) -> Bool {
-        guard let attrs = axWindowAttributes(element) else { return false }
-        return attrs.role == kAXWindowRole
-            && attrs.subrole == kAXStandardWindowSubrole
-            && !attrs.minimized
-            && !attrs.fullscreen
+        attributes(of: element)?.isTileable ?? false
     }
 
     static func isStandardWindow(_ element: AXUIElement) -> Bool {
-        guard let attrs = axWindowAttributes(element) else { return false }
-        return attrs.role == kAXWindowRole && attrs.subrole == kAXStandardWindowSubrole
+        attributes(of: element)?.isStandardWindow ?? false
     }
 
     static func canonicalWindowElement(_ element: AXUIElement) -> AXUIElement? {

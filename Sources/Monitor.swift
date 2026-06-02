@@ -8,6 +8,15 @@ enum WindowUpdate {
 }
 
 package final class Monitor {
+    private struct ActiveWindowSnapshot {
+        let window: TrackedWindow
+        let attributes: WindowAttributes
+
+        var isFullscreen: Bool { attributes.fullscreen }
+        var isTrackable: Bool { attributes.isTrackable }
+        var isTileable: Bool { attributes.isTileable }
+    }
+
     private static let geometryDebounceDelay: TimeInterval = 0.08
     private static let geometrySuppressionDelay: TimeInterval = 0.20
     private static let frameTolerance: CGFloat = 2.0
@@ -288,34 +297,52 @@ package final class Monitor {
 
     @discardableResult
     func retile() -> CGRect {
-        cleanActiveWorkspace()
+        let snapshots = cleanActiveWorkspace()
         let screen = WindowManager.screenFrame(for: self.screen)
-        guard !activeWorkspaceIsFullscreen else { return screen }
+        guard !snapshots.contains(where: \.isFullscreen) else { return screen }
 
-        let tileableWindows = workspaces[active].filter { $0.isTileable() }
+        let tileableWindows = snapshots
+            .filter(\.isTileable)
+            .map(\.window)
         ignoreGeometryUntil = ProcessInfo.processInfo.systemUptime + Self.geometrySuppressionDelay
-        Tiler.tile(
-            windows: tileableWindows,
+        let frames = Tiler.calculateFrames(
+            count: tileableWindows.count,
             screen: screen,
             layout: layouts[active],
             settings: LayoutSettings(masterRatio: Config.shared.masterRatio)
         )
+        for (window, frame) in zip(tileableWindows, frames) {
+            window.setFrameUnchecked(frame)
+        }
         return screen
     }
 
-    private func cleanActiveWorkspace() {
+    @discardableResult
+    private func cleanActiveWorkspace() -> [ActiveWindowSnapshot] {
         var windows: [TrackedWindow] = []
+        var snapshots: [ActiveWindowSnapshot] = []
+        windows.reserveCapacity(workspaces[active].count)
+        snapshots.reserveCapacity(workspaces[active].count)
+
         for window in workspaces[active] {
-            guard window.isTrackable(), !windows.contains(window) else { continue }
+            guard let attributes = window.attributes(),
+                  attributes.isTrackable,
+                  !windows.contains(window)
+            else { continue }
             windows.append(window)
+            snapshots.append(ActiveWindowSnapshot(window: window, attributes: attributes))
         }
         workspaces[active] = windows
+        return snapshots
     }
 
     private func activeWorkspaceMatchesLayout(tolerance: CGFloat) -> Bool {
-        guard !activeWorkspaceIsFullscreen else { return true }
+        let snapshots = cleanActiveWorkspace()
+        guard !snapshots.contains(where: \.isFullscreen) else { return true }
 
-        let windows = workspaces[active].filter { $0.isTileable() }
+        let windows = snapshots
+            .filter(\.isTileable)
+            .map(\.window)
         let screen = WindowManager.screenFrame(for: self.screen)
         let frames = Tiler.calculateFrames(
             count: windows.count,
@@ -326,7 +353,7 @@ package final class Monitor {
         guard frames.count == windows.count else { return false }
 
         for i in windows.indices {
-            guard windows[i].isTileable(), let frame = windows[i].getFrame() else { return false }
+            guard let frame = windows[i].getFrame() else { return false }
             guard framesMatch(frame, frames[i], tolerance: tolerance) else { return false }
         }
 
@@ -363,7 +390,7 @@ package final class Monitor {
     private func masterRatioFor(point: CGPoint, requireDividerHit: Bool) -> CGFloat? {
         guard !activeWorkspaceIsFullscreen,
               layouts[active] == .tile,
-              workspaces[active].filter({ $0.isTileable() }).count > 1
+              activeTileableWindowCount > 1
         else { return nil }
 
         let screen = WindowManager.screenFrame(for: self.screen)
@@ -376,6 +403,15 @@ package final class Monitor {
 
         let rawRatio = (point.x - screen.minX) / screen.width
         return Swift.min(Swift.max(rawRatio, 0.10), 0.90)
+    }
+
+    private var activeTileableWindowCount: Int {
+        var count = 0
+        for window in workspaces[active] where window.isTileable() {
+            count += 1
+            if count > 1 { return count }
+        }
+        return count
     }
 
     package func resizeWorkspaces(to count: Int) {
