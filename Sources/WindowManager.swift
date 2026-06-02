@@ -282,18 +282,27 @@ enum WindowManager {
 
     static func trackedWindows(pid: pid_t, windows: [AXUIElement]) -> [TrackedWindow] {
         let candidates = windows.compactMap { WindowCandidate(element: $0, pid: pid) }
-        var result: [TrackedWindow] = []
+        var groups: [AXElementIdentity: WindowCandidateGroup] = [:]
+        var orderedKeys: [AXElementIdentity] = []
 
         for candidate in candidates {
-            let related = candidates
-                .filter { candidate.matches($0) }
-                .map(\.window)
-            let window = TrackedWindow(element: candidate.element, pid: pid, members: related, group: candidate.group)
-            guard !result.contains(window) else { continue }
-            result.append(window)
+            let key = AXElementIdentity(element: candidate.window)
+            if groups[key] == nil {
+                groups[key] = WindowCandidateGroup(first: candidate)
+                orderedKeys.append(key)
+            }
+            groups[key]?.members.append(candidate.window)
         }
 
-        return result
+        return orderedKeys.compactMap { key in
+            guard let group = groups[key] else { return nil }
+            return TrackedWindow(
+                element: group.first.element,
+                pid: pid,
+                members: group.members,
+                group: group.first.group
+            )
+        }
     }
 
     static func focusedWindow() -> TrackedWindow? {
@@ -385,7 +394,6 @@ enum WindowManager {
 private struct WindowCandidate {
     let element: AXUIElement
     let window: AXUIElement
-    let frame: CGRect
     let group: WindowGroupKey
 
     init?(element: AXUIElement, pid: pid_t) {
@@ -393,11 +401,11 @@ private struct WindowCandidate {
         guard WindowManager.isTrackable(window), let frame = WindowManager.frame(of: window) else { return nil }
         self.element = element
         self.window = window
-        self.frame = frame
         self.group = WindowGroupKey(pid: pid, frame: frame)
     }
+}
 
-    func matches(_ other: WindowCandidate) -> Bool {
-        CFEqual(window, other.window)
-    }
+private struct WindowCandidateGroup {
+    let first: WindowCandidate
+    var members: [AXUIElement] = []
 }
