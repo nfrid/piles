@@ -8,6 +8,7 @@ package final class WindowObserver {
     private static let retryInterval: TimeInterval = 0.05
 
     private var observers: [pid_t: AXObserver] = [:]
+    private var observedWindows: [pid_t: Set<ObservedWindowElement>] = [:]
 
     private init() {}
 
@@ -32,6 +33,7 @@ package final class WindowObserver {
             let pid = app.processIdentifier
             WorkspaceManager.shared.removeWindow(pid: pid)
             WindowObserver.shared.observers.removeValue(forKey: pid)
+            WindowObserver.shared.observedWindows.removeValue(forKey: pid)
         }
 
         nc.addObserver(
@@ -105,9 +107,9 @@ package final class WindowObserver {
         guard result == .success, let obs = observer else { return }
 
         let appRef = AXUIElementCreateApplication(pid)
-        AXObserverAddNotification(obs, appRef, kAXWindowCreatedNotification as CFString, nil)
-        AXObserverAddNotification(obs, appRef, kAXFocusedWindowChangedNotification as CFString, nil)
-        AXObserverAddNotification(obs, appRef, kAXFocusedUIElementChangedNotification as CFString, nil)
+        addNotification(obs, appRef, kAXWindowCreatedNotification as CFString, context: "pid=\(pid) target=app")
+        addNotification(obs, appRef, kAXFocusedWindowChangedNotification as CFString, context: "pid=\(pid) target=app")
+        addNotification(obs, appRef, kAXFocusedUIElementChangedNotification as CFString, context: "pid=\(pid) target=app")
         CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(obs), .defaultMode)
 
         observers[pid] = obs
@@ -122,15 +124,7 @@ package final class WindowObserver {
         if notif == kAXWindowCreatedNotification {
             WindowObserver.shared.trySyncWindows(pid: pidValue, attempt: 0)
         } else if notif == kAXUIElementDestroyedNotification {
-            if let obs = WindowObserver.shared.observers[pidValue] {
-                for name in [
-                    kAXUIElementDestroyedNotification,
-                    kAXMovedNotification,
-                    kAXResizedNotification,
-                ] {
-                    AXObserverRemoveNotification(obs, element, name as CFString)
-                }
-            }
+            WindowObserver.shared.stopObservingWindow(element: element, pid: pidValue)
             let windows = WindowManager.windows(pid: pidValue) ?? []
             DebugLog.write("destroy sync pid=\(pidValue) windows=\(DebugLog.describe(windows))")
             WorkspaceManager.shared.syncWindows(pid: pidValue, windows: windows)
@@ -143,9 +137,30 @@ package final class WindowObserver {
 
     private func observeWindow(element: AXUIElement, pid: pid_t) {
         guard let obs = observers[pid] else { return }
-        AXObserverAddNotification(obs, element, kAXUIElementDestroyedNotification as CFString, nil)
-        AXObserverAddNotification(obs, element, kAXMovedNotification as CFString, nil)
-        AXObserverAddNotification(obs, element, kAXResizedNotification as CFString, nil)
+        let key = ObservedWindowElement(element: element)
+        var observed = observedWindows[pid] ?? []
+        guard observed.insert(key).inserted else { return }
+
+        let notifications = [
+            kAXUIElementDestroyedNotification,
+            kAXMovedNotification,
+            kAXResizedNotification,
+        ].map { $0 as CFString }
+
+        var added: [CFString] = []
+        for notification in notifications {
+            guard addNotification(obs, element, notification, context: "pid=\(pid) target=window") else {
+                for previous in added {
+                    removeNotification(obs, element, previous, context: "pid=\(pid) target=window cleanup=partial")
+                }
+                observed.remove(key)
+                observedWindows[pid] = observed.isEmpty ? nil : observed
+                return
+            }
+            added.append(notification)
+        }
+
+        observedWindows[pid] = observed
     }
 
     private func observeWindows(_ windows: [TrackedWindow], pid: pid_t) {
@@ -154,5 +169,64 @@ package final class WindowObserver {
                 observeWindow(element: member, pid: pid)
             }
         }
+    }
+
+    private func stopObservingWindow(element: AXUIElement, pid: pid_t) {
+        guard let obs = observers[pid] else { return }
+        let key = ObservedWindowElement(element: element)
+        guard var observed = observedWindows[pid],
+              observed.remove(key) != nil
+        else { return }
+
+        for name in [
+            kAXUIElementDestroyedNotification,
+            kAXMovedNotification,
+            kAXResizedNotification,
+        ] {
+            removeNotification(obs, element, name as CFString, context: "pid=\(pid) target=window")
+        }
+        observedWindows[pid] = observed.isEmpty ? nil : observed
+    }
+
+    @discardableResult
+    private func addNotification(
+        _ observer: AXObserver,
+        _ element: AXUIElement,
+        _ notification: CFString,
+        context: @autoclosure () -> String
+    ) -> Bool {
+        let result = AXObserverAddNotification(observer, element, notification, nil)
+        guard result == .success else {
+            DebugLog.write("ax observer add failed result=\(result) notification=\(notification) context=\(context())")
+            return false
+        }
+        return true
+    }
+
+    @discardableResult
+    private func removeNotification(
+        _ observer: AXObserver,
+        _ element: AXUIElement,
+        _ notification: CFString,
+        context: @autoclosure () -> String
+    ) -> Bool {
+        let result = AXObserverRemoveNotification(observer, element, notification)
+        guard result == .success else {
+            DebugLog.write("ax observer remove failed result=\(result) notification=\(notification) context=\(context())")
+            return false
+        }
+        return true
+    }
+}
+
+private struct ObservedWindowElement: Hashable {
+    let element: AXUIElement
+
+    static func == (lhs: ObservedWindowElement, rhs: ObservedWindowElement) -> Bool {
+        CFEqual(lhs.element, rhs.element)
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(CFHash(element))
     }
 }

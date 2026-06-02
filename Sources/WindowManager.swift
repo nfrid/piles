@@ -51,14 +51,14 @@ struct WindowAttributes {
     }
 }
 
-private struct AXElementIdentity: Hashable {
+package struct WindowIdentityKey: Hashable {
     let element: AXUIElement
 
-    static func == (lhs: AXElementIdentity, rhs: AXElementIdentity) -> Bool {
+    package static func == (lhs: WindowIdentityKey, rhs: WindowIdentityKey) -> Bool {
         CFEqual(lhs.element, rhs.element)
     }
 
-    func hash(into hasher: inout Hasher) {
+    package func hash(into hasher: inout Hasher) {
         hasher.combine(CFHash(element))
     }
 }
@@ -100,8 +100,8 @@ struct TrackedWindow: Equatable {
     let members: [AXUIElement]
     let pid: pid_t
     let group: WindowGroupKey
-    private let referenceIdentities: Set<AXElementIdentity>
-    private let memberIdentities: Set<AXElementIdentity>
+    private let referenceIdentities: Set<WindowIdentityKey>
+    private let memberIdentities: Set<WindowIdentityKey>
 
     init(element: AXUIElement, pid: pid_t, members: [AXUIElement] = [], group: WindowGroupKey? = nil) {
         let window = WindowManager.canonicalWindowElement(element) ?? element
@@ -112,8 +112,8 @@ struct TrackedWindow: Equatable {
         self.members = uniqueMembers
         self.pid = pid
         self.group = group ?? WindowGroupKey(pid: pid, frame: WindowManager.frame(of: window) ?? .null)
-        self.referenceIdentities = Set(uniqueReferences.map(AXElementIdentity.init))
-        self.memberIdentities = Set(uniqueMembers.map(AXElementIdentity.init))
+        self.referenceIdentities = Set(uniqueReferences.map(WindowIdentityKey.init))
+        self.memberIdentities = Set(uniqueMembers.map(WindowIdentityKey.init))
     }
 
     static func == (lhs: TrackedWindow, rhs: TrackedWindow) -> Bool {
@@ -129,7 +129,11 @@ struct TrackedWindow: Equatable {
     }
 
     func containsElement(_ element: AXUIElement) -> Bool {
-        referenceIdentities.contains(AXElementIdentity(element: element))
+        referenceIdentities.contains(WindowIdentityKey(element: element))
+    }
+
+    var identityKeys: Set<WindowIdentityKey> {
+        referenceIdentities
     }
 
     func getFrame() -> CGRect? {
@@ -278,8 +282,8 @@ struct TrackedWindow: Equatable {
 
     private static func unique(_ elements: [AXUIElement]) -> [AXUIElement] {
         var result: [AXUIElement] = []
-        var identities: Set<AXElementIdentity> = []
-        for element in elements where identities.insert(AXElementIdentity(element: element)).inserted {
+        var identities: Set<WindowIdentityKey> = []
+        for element in elements where identities.insert(WindowIdentityKey(element: element)).inserted {
             result.append(element)
         }
         return result
@@ -371,11 +375,11 @@ enum WindowManager {
 
     static func trackedWindows(pid: pid_t, windows: [AXUIElement]) -> [TrackedWindow] {
         let candidates = windows.compactMap { WindowCandidate(element: $0, pid: pid) }
-        var groups: [AXElementIdentity: WindowCandidateGroup] = [:]
-        var orderedKeys: [AXElementIdentity] = []
+        var groups: [WindowIdentityKey: WindowCandidateGroup] = [:]
+        var orderedKeys: [WindowIdentityKey] = []
 
         for candidate in candidates {
-            let key = AXElementIdentity(element: candidate.window)
+            let key = WindowIdentityKey(element: candidate.window)
             if groups[key] == nil {
                 groups[key] = WindowCandidateGroup(first: candidate)
                 orderedKeys.append(key)

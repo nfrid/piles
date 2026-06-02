@@ -23,6 +23,7 @@ package final class WorkspaceManager {
     private(set) var focusedMonitorIndex: Int = 0
     private var screenChangeWork: DispatchWorkItem?
     private var focusFollowWork: DispatchWorkItem?
+    private var locationIndex: [WindowIdentityKey: LocatedWindow] = [:]
 
     var focusedMonitor: Monitor { monitors[focusedMonitorIndex] }
 
@@ -43,11 +44,13 @@ package final class WorkspaceManager {
         for monitor in monitors {
             monitor.retile()
         }
+        rebuildLocationIndex()
         StatusBar.shared.update()
     }
 
     func switchTo(_ index: Int) {
         focusedMonitor.switchTo(index)
+        rebuildLocationIndex()
         StatusBar.shared.update()
     }
 
@@ -64,16 +67,19 @@ package final class WorkspaceManager {
         } else {
             focusedMonitor.switchTo(target)
         }
+        rebuildLocationIndex()
         StatusBar.shared.update()
     }
 
     func moveActiveWindowTo(_ index: Int) {
         focusedMonitor.moveActiveWindowTo(index)
+        rebuildLocationIndex()
         StatusBar.shared.update()
     }
 
     func moveActiveWindowAndSwitchTo(_ index: Int) {
         focusedMonitor.moveActiveWindowAndSwitchTo(index)
+        rebuildLocationIndex()
         StatusBar.shared.update()
     }
 
@@ -82,6 +88,9 @@ package final class WorkspaceManager {
         for monitor in monitors {
             let result = monitor.updateExistingWindow(window)
             if result != .missing {
+                if result == .replaced {
+                    rebuildLocationIndex()
+                }
                 return result
             }
         }
@@ -92,6 +101,7 @@ package final class WorkspaceManager {
             position: placement.assignment?.position
         )
         if result == .inserted {
+            rebuildLocationIndex()
             StatusBar.shared.update()
         }
         return result
@@ -112,6 +122,7 @@ package final class WorkspaceManager {
         }
 
         if changed {
+            rebuildLocationIndex()
             StatusBar.shared.update()
         }
         DebugLog.write("workspace sync end pid=\(pid) changed=\(changed)")
@@ -133,6 +144,7 @@ package final class WorkspaceManager {
             }
         }
         guard changed else { return }
+        rebuildLocationIndex()
         StatusBar.shared.update()
     }
 
@@ -148,16 +160,19 @@ package final class WorkspaceManager {
 
     func moveFocusedWindowNext() {
         focusedMonitor.moveFocusedWindowNext()
+        rebuildLocationIndex()
         MonocleBar.shared.update()
     }
 
     func moveFocusedWindowPrev() {
         focusedMonitor.moveFocusedWindowPrev()
+        rebuildLocationIndex()
         MonocleBar.shared.update()
     }
 
     func swapMaster() {
         focusedMonitor.swapMaster()
+        rebuildLocationIndex()
     }
 
     func canResizeMasterRatio(at point: CGPoint) -> Bool {
@@ -166,11 +181,13 @@ package final class WorkspaceManager {
 
     func resizeMasterRatio(at point: CGPoint) {
         guard focusedMonitor.resizeMasterRatio(at: point) else { return }
+        rebuildLocationIndex()
         MonocleBar.shared.update()
     }
 
     func toggleLayout() {
         focusedMonitor.toggleLayout()
+        rebuildLocationIndex()
         StatusBar.shared.update()
     }
 
@@ -200,6 +217,7 @@ package final class WorkspaceManager {
 
         focusedMonitorIndex = targetIndex
         moved.focus()
+        rebuildLocationIndex()
         StatusBar.shared.update()
     }
 
@@ -277,12 +295,14 @@ package final class WorkspaceManager {
                 monitor.focusedIndices[monitor.active] = location.windowIndex
             }
             monitor.rememberFocusedWindow(window)
+            rebuildLocationIndex()
             StatusBar.shared.update()
             return
         }
 
         focusedMonitorIndex = location.monitorIndex
         monitor.revealWorkspace(location.workspaceIndex, focusing: window)
+        rebuildLocationIndex()
         StatusBar.shared.update()
     }
 
@@ -342,6 +362,7 @@ package final class WorkspaceManager {
         for monitor in monitors {
             monitor.retile()
         }
+        rebuildLocationIndex()
         StatusBar.shared.update()
     }
 
@@ -352,6 +373,7 @@ package final class WorkspaceManager {
             monitor.resizeWorkspaces(to: count)
             monitor.retile()
         }
+        rebuildLocationIndex()
         StatusBar.shared.update()
         fputs("piles: config reloaded\n", stderr)
     }
@@ -373,40 +395,35 @@ package final class WorkspaceManager {
             .sorted { $0.screen.frame.origin.x < $1.screen.frame.origin.x }
     }
 
+    private func rebuildLocationIndex() {
+        var index: [WindowIdentityKey: LocatedWindow] = [:]
+        forEachLocatedWindow { located in
+            for key in located.window.identityKeys {
+                index[key] = located
+            }
+            return true
+        }
+        locationIndex = index
+    }
+
     private func primaryDisplayID() -> CGDirectDisplayID {
         guard !monitors.isEmpty else { return 0 }
         return monitors.first(where: { $0.screen == NSScreen.main })?.displayID ?? monitors[0].displayID
     }
 
     private func locateWindow(_ window: TrackedWindow) -> WindowLocation? {
-        firstLocatedWindow { $0 == window }?.location
-    }
-
-    private func locateWindow(pid: pid_t, element: AXUIElement) -> WindowLocation? {
-        firstLocatedWindow { window in
-            window.pid == pid && window.containsElement(element)
-        }?.location
-    }
-
-    private func firstLocatedWindow(where predicate: (TrackedWindow) -> Bool) -> LocatedWindow? {
-        for monitorIndex in monitors.indices {
-            let monitor = monitors[monitorIndex]
-            for workspaceIndex in monitor.workspaces.indices {
-                for windowIndex in monitor.workspaces[workspaceIndex].indices {
-                    let window = monitor.workspaces[workspaceIndex][windowIndex]
-                    guard predicate(window) else { continue }
-                    return LocatedWindow(
-                        window: window,
-                        location: WindowLocation(
-                            monitorIndex: monitorIndex,
-                            workspaceIndex: workspaceIndex,
-                            windowIndex: windowIndex
-                        )
-                    )
-                }
+        for key in window.identityKeys {
+            if let located = locationIndex[key] {
+                return located.location
             }
         }
         return nil
+    }
+
+    private func locateWindow(pid: pid_t, element: AXUIElement) -> WindowLocation? {
+        let key = WindowIdentityKey(element: element)
+        guard let located = locationIndex[key], located.window.pid == pid else { return nil }
+        return located.location
     }
 
     private func singleTrackedWindow(pid: pid_t) -> (window: TrackedWindow, location: WindowLocation)? {
