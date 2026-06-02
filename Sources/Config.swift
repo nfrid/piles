@@ -110,6 +110,24 @@ package struct BuiltinBindings {
     var lastWorkspace: (key: UInt16, shift: Bool) = (Key.tab, false)
 }
 
+private typealias BuiltinBindingKeyPath = WritableKeyPath<BuiltinBindings, (key: UInt16, shift: Bool)>
+
+private let builtinBindingKeys: [(name: String, keyPath: BuiltinBindingKeyPath)] = [
+    ("focus_next", \.focusNext),
+    ("focus_prev", \.focusPrev),
+    ("move_next", \.moveNext),
+    ("move_prev", \.movePrev),
+    ("workspace_next", \.workspaceNext),
+    ("workspace_prev", \.workspacePrev),
+    ("swap_master", \.swapMaster),
+    ("toggle_layout", \.toggleLayout),
+    ("focus_monitor_prev", \.focusMonitorPrev),
+    ("focus_monitor_next", \.focusMonitorNext),
+    ("move_monitor_prev", \.moveMonitorPrev),
+    ("move_monitor_next", \.moveMonitorNext),
+    ("last_workspace", \.lastWorkspace),
+]
+
 package struct WindowAssignment {
     let app: String?
     let bundleID: String?
@@ -232,19 +250,7 @@ package struct Config {
         }
 
         if let bindings = toml["bindings"] as? [String: Any] {
-            applyBinding(bindings, "focus_next", to: &config.bindings.focusNext)
-            applyBinding(bindings, "focus_prev", to: &config.bindings.focusPrev)
-            applyBinding(bindings, "move_next", to: &config.bindings.moveNext)
-            applyBinding(bindings, "move_prev", to: &config.bindings.movePrev)
-            applyBinding(bindings, "workspace_next", to: &config.bindings.workspaceNext)
-            applyBinding(bindings, "workspace_prev", to: &config.bindings.workspacePrev)
-            applyBinding(bindings, "swap_master", to: &config.bindings.swapMaster)
-            applyBinding(bindings, "toggle_layout", to: &config.bindings.toggleLayout)
-            applyBinding(bindings, "focus_monitor_prev", to: &config.bindings.focusMonitorPrev)
-            applyBinding(bindings, "focus_monitor_next", to: &config.bindings.focusMonitorNext)
-            applyBinding(bindings, "move_monitor_prev", to: &config.bindings.moveMonitorPrev)
-            applyBinding(bindings, "move_monitor_next", to: &config.bindings.moveMonitorNext)
-            applyBinding(bindings, "last_workspace", to: &config.bindings.lastWorkspace)
+            applyBindings(bindings, to: &config.bindings)
         }
 
         if let customs = toml["custom"] as? [[String: Any]] {
@@ -304,17 +310,16 @@ package struct Config {
         return (Key.byName[s], false)
     }
 
-    private static func applyBinding(
-        _ dict: [String: Any], _ name: String,
-        to binding: inout (key: UInt16, shift: Bool)
-    ) {
-        guard let value = dict[name] as? String else { return }
-        let (keyCode, shift) = parseKeyString(value)
-        guard let code = keyCode else {
-            fputs("piles: unknown key '\(value)' for binding '\(name)'\n", stderr)
-            return
+    private static func applyBindings(_ dict: [String: Any], to bindings: inout BuiltinBindings) {
+        for bindingKey in builtinBindingKeys {
+            guard let value = dict[bindingKey.name] as? String else { continue }
+            let (keyCode, shift) = parseKeyString(value)
+            guard let code = keyCode else {
+                fputs("piles: unknown key '\(value)' for binding '\(bindingKey.name)'\n", stderr)
+                continue
+            }
+            bindings[keyPath: bindingKey.keyPath] = (code, shift)
         }
-        binding = (code, shift)
     }
 
     private static func workspaceIndex(_ value: Any?, max: Int) -> Int? {
