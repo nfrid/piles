@@ -98,6 +98,11 @@ package final class StatusBar: NSObject {
         for view in views {
             stackView.addArrangedSubview(view)
         }
+
+        stackView.invalidateIntrinsicContentSize()
+        stackView.needsLayout = true
+        stackView.layoutSubtreeIfNeeded()
+        statusItem.length = ceil(stackView.fittingSize.width)
     }
 }
 
