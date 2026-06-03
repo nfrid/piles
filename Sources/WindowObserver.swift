@@ -8,7 +8,7 @@ package final class WindowObserver {
     private static let retryInterval: TimeInterval = 0.05
 
     private var observers: [pid_t: AXObserver] = [:]
-    private var observedWindows: [pid_t: Set<ObservedWindowElement>] = [:]
+    private var observedWindows: [pid_t: Set<WindowIdentityKey>] = [:]
 
     private init() {}
 
@@ -137,7 +137,7 @@ package final class WindowObserver {
 
     private func observeWindow(element: AXUIElement, pid: pid_t) {
         guard let obs = observers[pid] else { return }
-        let key = ObservedWindowElement(element: element)
+        let key = WindowIdentityKey(element: element)
         var observed = observedWindows[pid] ?? []
         guard observed.insert(key).inserted else { return }
 
@@ -173,7 +173,7 @@ package final class WindowObserver {
 
     private func stopObservingWindow(element: AXUIElement, pid: pid_t) {
         guard let obs = observers[pid] else { return }
-        let key = ObservedWindowElement(element: element)
+        let key = WindowIdentityKey(element: element)
         guard var observed = observedWindows[pid],
               observed.remove(key) != nil
         else { return }
@@ -216,17 +216,5 @@ package final class WindowObserver {
             return false
         }
         return true
-    }
-}
-
-private struct ObservedWindowElement: Hashable {
-    let element: AXUIElement
-
-    static func == (lhs: ObservedWindowElement, rhs: ObservedWindowElement) -> Bool {
-        CFEqual(lhs.element, rhs.element)
-    }
-
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(CFHash(element))
     }
 }

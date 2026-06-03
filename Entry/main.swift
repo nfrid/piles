@@ -4,6 +4,18 @@ import PilesCore
 
 private var signalSources: [DispatchSourceSignal] = []
 
+private func installSignalHandler(
+    _ signalNumber: Int32,
+    queue: DispatchQueue,
+    handler: @escaping () -> Void
+) {
+    signal(signalNumber, SIG_IGN)
+    let source = DispatchSource.makeSignalSource(signal: signalNumber, queue: queue)
+    source.setEventHandler(handler: handler)
+    source.resume()
+    signalSources.append(source)
+}
+
 func checkAccessibility() -> Bool {
     let options = [kAXTrustedCheckOptionPrompt.takeRetainedValue(): true] as CFDictionary
     return AXIsProcessTrustedWithOptions(options)
@@ -15,23 +27,12 @@ func setupCrashSafety() {
         WorkspaceManager.shared.restoreAllWindows()
     }
 
-    signal(SIGTERM, SIG_IGN)
-    let termSource = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
-    termSource.setEventHandler {
+    let terminate = {
         restore()
         NSApplication.shared.terminate(nil)
     }
-    termSource.resume()
-    signalSources.append(termSource)
-
-    signal(SIGINT, SIG_IGN)
-    let intSource = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
-    intSource.setEventHandler {
-        restore()
-        NSApplication.shared.terminate(nil)
-    }
-    intSource.resume()
-    signalSources.append(intSource)
+    installSignalHandler(SIGTERM, queue: .main, handler: terminate)
+    installSignalHandler(SIGINT, queue: .main, handler: terminate)
 
     atexit {
         WorkspaceManager.shared.restoreAllWindows()

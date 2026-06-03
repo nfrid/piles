@@ -67,7 +67,7 @@ enum WindowGroupTests {
                 testWindow(pid: 1003),
             ]
             var focusedIndex = 1
-            let remaining = Monitor.windowsAfterRemoving(from: windows, focusedIndex: &focusedIndex) { $0.pid == 1001 }
+            let remaining = WorkspaceWindows.afterRemoving(from: windows, focusedIndex: &focusedIndex) { $0.pid == 1001 }
             check(remaining.map(\.pid) == [1002, 1003], "removes minimized window")
             check(focusedIndex == 0, "focused index follows selected window after earlier removal")
         }
@@ -79,14 +79,14 @@ enum WindowGroupTests {
                 testWindow(pid: 1003),
             ]
             var focusedIndex = 0
-            let remaining = Monitor.windowsAfterRemoving(from: windows, focusedIndex: &focusedIndex) { $0.pid == 1001 }
+            let remaining = WorkspaceWindows.afterRemoving(from: windows, focusedIndex: &focusedIndex) { $0.pid == 1001 }
             check(remaining.map(\.pid) == [1002, 1003], "removes focused minimized window")
             check(focusedIndex == 0, "focused removal selects replacement at same position")
         }
 
         do {
-            check(Monitor.wrappedIndex(-1, count: 3) == 2, "moving first window prev wraps to last")
-            check(Monitor.wrappedIndex(3, count: 3) == 0, "moving last window next wraps to first")
+            check(WorkspaceWindows.wrappedIndex(-1, count: 3) == 2, "moving first window prev wraps to last")
+            check(WorkspaceWindows.wrappedIndex(3, count: 3) == 0, "moving last window next wraps to first")
         }
 
         do {
@@ -97,15 +97,15 @@ enum WindowGroupTests {
                 testWindow(pid: 3304),
             ]
 
-            let lastMovedDown = Monitor.windowsByMoving(windows, from: 3, offset: 1)
+            let lastMovedDown = WorkspaceWindows.moving(windows, from: 3, offset: 1)
             check(lastMovedDown.items.map(\.pid) == [3304, 3301, 3302, 3303], "moving last window next rotates it to front")
             check(lastMovedDown.movedIndex == 0, "moving last window next focuses wrapped front")
 
-            let firstMovedUp = Monitor.windowsByMoving(windows, from: 0, offset: -1)
+            let firstMovedUp = WorkspaceWindows.moving(windows, from: 0, offset: -1)
             check(firstMovedUp.items.map(\.pid) == [3302, 3303, 3304, 3301], "moving first window prev rotates it to back")
             check(firstMovedUp.movedIndex == 3, "moving first window prev focuses wrapped back")
 
-            let middleMovedDown = Monitor.windowsByMoving(windows, from: 1, offset: 1)
+            let middleMovedDown = WorkspaceWindows.moving(windows, from: 1, offset: 1)
             check(middleMovedDown.items.map(\.pid) == [3301, 3303, 3302, 3304], "moving middle window next reorders adjacent windows")
             check(middleMovedDown.movedIndex == 2, "moving middle window next focuses moved position")
         }

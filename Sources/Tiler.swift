@@ -27,13 +27,6 @@ package enum Tiler {
         }
     }
 
-    static func tile(windows: [TrackedWindow], screen: CGRect, layout: Layout, settings: LayoutSettings) {
-        let frames = calculateFrames(count: windows.count, screen: screen, layout: layout, settings: settings)
-        for (i, frame) in frames.enumerated() {
-            windows[i].setFrame(frame)
-        }
-    }
-
     private static func tileFrames(count: Int, screen: CGRect, settings: LayoutSettings) -> [CGRect] {
         if count == 1 {
             return [screen]

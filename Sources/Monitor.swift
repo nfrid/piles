@@ -642,28 +642,4 @@ package final class Monitor {
             }
         }
     }
-
-    static func windowsAfterRemoving(
-        from windows: [TrackedWindow],
-        focusedIndex: inout Int,
-        where predicate: (TrackedWindow) -> Bool
-    ) -> [TrackedWindow] {
-        WorkspaceWindows.afterRemoving(from: windows, focusedIndex: &focusedIndex, where: predicate)
-    }
-
-    static func wrappedIndex(_ index: Int, count: Int) -> Int {
-        WorkspaceWindows.wrappedIndex(index, count: count)
-    }
-
-    static func windowsByMoving(
-        _ windows: [TrackedWindow],
-        from sourceIndex: Int,
-        offset: Int
-    ) -> (items: [TrackedWindow], movedIndex: Int) {
-        WorkspaceWindows.moving(windows, from: sourceIndex, offset: offset)
-    }
-
-    package static func framePreservingSizeInsideScreen(_ frame: CGRect, screen: CGRect) -> CGRect {
-        WorkspaceWindows.framePreservingSizeInsideScreen(frame, screen: screen)
-    }
 }
