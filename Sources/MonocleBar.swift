@@ -166,7 +166,7 @@ private struct MonocleBarState: Equatable {
         let windows = monitor.workspaces[monitor.active]
         guard !windows.isEmpty else { return nil }
 
-        let items = windows.map { MonocleBarItem(title: label(for: $0)) }
+        let items = windows.map { MonocleBarItem(title: $0.displayTitle()) }
         let focusedIndex = min(monitor.focusedIndices[monitor.active], windows.count - 1)
         return MonocleBarState(
             displayID: monitor.displayID,
@@ -175,18 +175,6 @@ private struct MonocleBarState: Equatable {
             focusedIndex: focusedIndex,
             contentWidth: MonocleBarView.contentWidth(for: items)
         )
-    }
-
-    private static func label(for window: TrackedWindow) -> String {
-        if let title = window.title()?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
-            return title
-        }
-        if let app = NSRunningApplication(processIdentifier: window.pid),
-           let name = app.localizedName?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !name.isEmpty {
-            return name
-        }
-        return "Window"
     }
 }
 

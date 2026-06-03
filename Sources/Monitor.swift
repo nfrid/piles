@@ -257,19 +257,12 @@ package final class Monitor {
         guard rememberFocusedWindow(focused) else { return }
 
         let target = workspaces[active][focusedIndices[active]]
-        target.focus()
-        if layouts[active] == .monocle {
-            target.raise()
-        }
+        focusInActiveLayout(target)
     }
 
     func moveActiveWindowTo(_ index: Int) {
-        guard workspaces.indices.contains(index), index != active else { return }
-        guard let focused = WindowManager.focusedWindow() else { return }
-
-        guard let removed = state.moveActiveWindow(matching: focused, to: index) else { return }
-        let moved = focused.keepingMembers(from: removed)
-        workspaces[index][0] = moved
+        guard index != active else { return }
+        guard let moved = moveActiveFocusedWindow(to: index) else { return }
 
         retile()
         moved.hideOffscreen(WindowManager.screenRect(for: self.screen))
@@ -285,17 +278,12 @@ package final class Monitor {
             restoreFocusedWindow()
             return
         }
-        guard let focused = WindowManager.focusedWindow(),
-              let removed = state.moveActiveWindow(matching: focused, to: index)
-        else {
+        if let moved = moveActiveFocusedWindow(to: index) {
             switchTo(index)
-            return
+            moved.focus()
+        } else {
+            switchTo(index)
         }
-
-        let moved = focused.keepingMembers(from: removed)
-        workspaces[index][0] = moved
-        switchTo(index)
-        moved.focus()
     }
 
     func nextOccupiedWorkspace(offset: Int) -> Int? {
@@ -396,11 +384,8 @@ package final class Monitor {
         else { return }
         let targetIndex = (i + offset + windows.count) % windows.count
         let target = windows[targetIndex]
-        target.focus()
+        focusInActiveLayout(target)
         focusedIndices[active] = targetIndex
-        if layouts[active] == .monocle {
-            target.raise()
-        }
     }
 
     private func moveFocusedWindow(offset: Int) {
@@ -434,9 +419,10 @@ package final class Monitor {
     func toggleLayout() {
         layouts[active] = layouts[active] == .tile ? .monocle : .tile
         retile()
-        if layouts[active] == .monocle, let focused = WindowManager.focusedWindow(),
+        if layouts[active] == .monocle,
+           let focused = WindowManager.focusedWindow(),
            workspaces[active].contains(focused) {
-            focused.raise()
+            focusInActiveLayout(focused)
         }
     }
 
@@ -468,24 +454,14 @@ package final class Monitor {
 
     @discardableResult
     func retile() -> CGRect {
-        let snapshots = cleanActiveWorkspace()
-        let screen = WindowManager.screenFrame(for: self.screen)
-        guard !snapshots.contains(where: \.isFullscreen) else { return screen }
-
-        let tileableWindows = snapshots
-            .filter(\.isTileable)
-            .map(\.window)
+        guard let layout = activeLayoutFrames() else {
+            return WindowManager.screenFrame(for: self.screen)
+        }
         ignoreGeometryUntil = ProcessInfo.processInfo.systemUptime + Self.geometrySuppressionDelay
-        let frames = Tiler.calculateFrames(
-            count: tileableWindows.count,
-            screen: screen,
-            layout: layouts[active],
-            settings: LayoutSettings(masterRatio: Config.shared.masterRatio)
-        )
-        for (window, frame) in zip(tileableWindows, frames) {
+        for (window, frame) in zip(layout.windows, layout.frames) {
             window.setFrameUnchecked(frame)
         }
-        return screen
+        return layout.screen
     }
 
     @discardableResult
@@ -508,8 +484,20 @@ package final class Monitor {
     }
 
     private func activeWorkspaceMatchesLayout(tolerance: CGFloat) -> Bool {
+        guard let layout = activeLayoutFrames() else { return true }
+        guard layout.frames.count == layout.windows.count else { return false }
+
+        for i in layout.windows.indices {
+            guard let frame = layout.windows[i].getFrame() else { return false }
+            guard framesMatch(frame, layout.frames[i], tolerance: tolerance) else { return false }
+        }
+
+        return true
+    }
+
+    private func activeLayoutFrames() -> (windows: [TrackedWindow], frames: [CGRect], screen: CGRect)? {
         let snapshots = cleanActiveWorkspace()
-        guard !snapshots.contains(where: \.isFullscreen) else { return true }
+        guard !snapshots.contains(where: \.isFullscreen) else { return nil }
 
         let windows = snapshots
             .filter(\.isTileable)
@@ -521,14 +509,7 @@ package final class Monitor {
             layout: layouts[active],
             settings: LayoutSettings(masterRatio: Config.shared.masterRatio)
         )
-        guard frames.count == windows.count else { return false }
-
-        for i in windows.indices {
-            guard let frame = windows[i].getFrame() else { return false }
-            guard framesMatch(frame, frames[i], tolerance: tolerance) else { return false }
-        }
-
-        return true
+        return (windows, frames, screen)
     }
 
     private var activeWorkspaceIsFullscreen: Bool {
@@ -621,15 +602,29 @@ package final class Monitor {
         }
     }
 
+    private func focusInActiveLayout(_ window: TrackedWindow) {
+        window.focus()
+        if layouts[active] == .monocle {
+            window.raise()
+        }
+    }
+
+    private func moveActiveFocusedWindow(to workspaceIndex: Int) -> TrackedWindow? {
+        guard workspaces.indices.contains(workspaceIndex) else { return nil }
+        guard let focused = WindowManager.focusedWindow(),
+              let removed = state.moveActiveWindow(matching: focused, to: workspaceIndex)
+        else { return nil }
+        let moved = focused.keepingMembers(from: removed)
+        workspaces[workspaceIndex][0] = moved
+        return moved
+    }
+
     func restoreFocusedWindow() {
         let windows = workspaces[active]
         guard !windows.isEmpty else { return }
         let idx = activeFullscreenIndex ?? min(focusedIndices[active], windows.count - 1)
         let target = windows[idx]
-        target.focus()
-        if layouts[active] == .monocle {
-            target.raise()
-        }
+        focusInActiveLayout(target)
     }
 
     func restoreAllWindows() {

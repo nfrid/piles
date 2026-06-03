@@ -276,6 +276,24 @@ struct TrackedWindow: Equatable {
         NSRunningApplication(processIdentifier: pid)?.localizedName
     }
 
+    func displayTitle(fallback: String = "Window") -> String {
+        if let title = title()?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
+            return title
+        }
+        if let appName = appName()?.trimmingCharacters(in: .whitespacesAndNewlines), !appName.isEmpty {
+            return appName
+        }
+        return fallback
+    }
+
+    func displayLabels() -> (appName: String, windowTitle: String) {
+        let trimmedApp = appName()?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let appName = (trimmedApp?.isEmpty == false) ? trimmedApp! : "App"
+        let trimmedTitle = title()?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let windowTitle = (trimmedTitle?.isEmpty == false) ? trimmedTitle! : "Untitled window"
+        return (appName, windowTitle)
+    }
+
     func bundleID() -> String? {
         NSRunningApplication(processIdentifier: pid)?.bundleIdentifier
     }

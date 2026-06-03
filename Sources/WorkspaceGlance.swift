@@ -129,14 +129,8 @@ package final class WorkspaceGlance {
         }
 
         let binding = config.bindings.workspaceGlance
-        let hasModifier = flags.contains(config.modifier)
-        let hasExtraModifiers =
-            (config.modifier != .maskCommand && flags.contains(.maskCommand)) ||
-            (config.modifier != .maskControl && flags.contains(.maskControl)) ||
-            (config.modifier != .maskAlternate && flags.contains(.maskAlternate))
         let hasShift = flags.contains(.maskShift)
-        if hasModifier,
-           !hasExtraModifiers,
+        if config.matchesConfiguredModifier(flags),
            keyCode == binding.key,
            hasShift == binding.shift {
             DispatchQueue.main.async { self.hide() }
@@ -295,7 +289,7 @@ private struct GlanceState {
             ? 0
             : min(monitor.focusedIndices[workspaceIndex], tracked.count - 1)
         let windows = tracked.enumerated().map { windowIndex, window in
-            let labels = glanceLabels(for: window)
+            let labels = window.displayLabels()
             return GlanceWindow(
                 appName: labels.appName,
                 windowTitle: labels.windowTitle,
@@ -313,14 +307,6 @@ private struct GlanceState {
             windows: windows,
             focusedWindowIndex: focusedIndex
         )
-    }
-
-    private static func glanceLabels(for window: TrackedWindow) -> (appName: String, windowTitle: String) {
-        let trimmedApp = window.appName()?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let appName = (trimmedApp?.isEmpty == false) ? trimmedApp! : "App"
-        let trimmedTitle = window.title()?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let windowTitle = (trimmedTitle?.isEmpty == false) ? trimmedTitle! : "Untitled window"
-        return (appName, windowTitle)
     }
 
 }

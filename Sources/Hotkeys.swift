@@ -28,16 +28,10 @@ package struct HotkeyResolver {
             return .passThrough
         }
 
-        let hasModifier = flags.contains(config.modifier)
-        let hasShift = flags.contains(.maskShift)
-        let hasExtraModifiers =
-            (config.modifier != .maskCommand && flags.contains(.maskCommand)) ||
-            (config.modifier != .maskControl && flags.contains(.maskControl)) ||
-            (config.modifier != .maskAlternate && flags.contains(.maskAlternate))
-
-        guard hasModifier, !hasExtraModifiers else {
+        guard config.matchesConfiguredModifier(flags) else {
             return .passThrough
         }
+        let hasShift = flags.contains(.maskShift)
 
         for binding in config.customBindings {
             guard binding.key == keyCode, binding.shift == hasShift else { continue }
@@ -141,12 +135,6 @@ package final class Hotkeys {
 
         let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
         let config = Config.shared
-        let hasModifier = flags.contains(config.modifier)
-        let hasExtraModifiers =
-            (config.modifier != .maskCommand && flags.contains(.maskCommand)) ||
-            (config.modifier != .maskControl && flags.contains(.maskControl)) ||
-            (config.modifier != .maskAlternate && flags.contains(.maskAlternate))
-
         if type == .keyDown,
            WorkspaceOverview.shared.handleKey(keyCode: keyCode, flags: flags, config: config)
             || WorkspaceGlance.shared.handleKey(keyCode: keyCode, flags: flags, config: config) {
@@ -161,12 +149,12 @@ package final class Hotkeys {
             return nil
         }
 
-        if type == .leftMouseDragged, Hotkeys.shared.resizingMasterRatio, !hasModifier {
+        if type == .leftMouseDragged, Hotkeys.shared.resizingMasterRatio, !config.matchesConfiguredModifier(flags) {
             Hotkeys.shared.resizingMasterRatio = false
             return passThrough(event)
         }
 
-        guard hasModifier, !hasExtraModifiers else {
+        guard config.matchesConfiguredModifier(flags) else {
             return passThrough(event)
         }
 

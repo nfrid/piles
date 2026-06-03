@@ -92,14 +92,8 @@ package final class WorkspaceOverview {
         }
 
         let binding = config.bindings.workspaceOverview
-        let hasModifier = flags.contains(config.modifier)
-        let hasExtraModifiers =
-            (config.modifier != .maskCommand && flags.contains(.maskCommand)) ||
-            (config.modifier != .maskControl && flags.contains(.maskControl)) ||
-            (config.modifier != .maskAlternate && flags.contains(.maskAlternate))
         let hasShift = flags.contains(.maskShift)
-        if hasModifier,
-           !hasExtraModifiers,
+        if config.matchesConfiguredModifier(flags),
            keyCode == binding.key,
            hasShift == binding.shift {
             DispatchQueue.main.async { self.hide() }
@@ -286,7 +280,7 @@ private struct OverviewState {
                 : min(monitor.focusedIndices[index], windows.count - 1)
             let items = windows.enumerated().map { windowIndex, window in
                 OverviewWindow(
-                    title: windowLabel(for: window),
+                    title: window.displayTitle(),
                     icon: window.appIcon(),
                     focused: windowIndex == focusedIndex
                 )
@@ -309,18 +303,6 @@ private struct OverviewState {
             activeWorkspace: monitor.active,
             workspaces: workspaces
         )
-    }
-
-    private static func windowLabel(for window: TrackedWindow) -> String {
-        if let title = window.title()?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
-            return title
-        }
-        if let app = NSRunningApplication(processIdentifier: window.pid),
-           let name = app.localizedName?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !name.isEmpty {
-            return name
-        }
-        return "Window"
     }
 }
 

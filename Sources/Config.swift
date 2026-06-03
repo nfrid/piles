@@ -228,6 +228,15 @@ package struct Config {
     package func assignment(app: String?, bundleID: String?, title: String?) -> WindowAssignment? {
         assignments.first { $0.matches(app: app, bundleID: bundleID, title: title) }
     }
+
+    package func matchesConfiguredModifier(_ flags: CGEventFlags, allowShift: Bool = true) -> Bool {
+        guard flags.contains(modifier) else { return false }
+        if modifier != .maskCommand && flags.contains(.maskCommand) { return false }
+        if modifier != .maskControl && flags.contains(.maskControl) { return false }
+        if modifier != .maskAlternate && flags.contains(.maskAlternate) { return false }
+        if !allowShift && flags.contains(.maskShift) { return false }
+        return true
+    }
 }
 
 package enum ConfigParser {
