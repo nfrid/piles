@@ -51,7 +51,8 @@ reinstall, restart the running app, and open it.
 - **monocle switcher** - hold option in monocle layout to show the focused
   window and its neighbors by title
 - **workspace overview** - option+o opens an 80% screen grid of workspaces and
-  window titles; h/l move by column, j/k move by row, return or m to open, esc to close
+  window titles; h/l move by column, j/k move by row, return or m to open, o to glance
+  the selected workspace, esc to close
 - **workspace glance** - option+shift+o opens the same style overlay for windows on
   the current workspace only; navigate and focus without leaving the workspace
 - **app switcher follow** - command-tab to a hidden workspace window reveals the

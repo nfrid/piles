@@ -120,6 +120,14 @@ package final class WorkspaceOverview {
         case Key.return, Key.m:
             DispatchQueue.main.async { self.confirmSelection() }
             return true
+        case Key.o:
+            DispatchQueue.main.async {
+                WorkspaceGlance.shared.show(
+                    workspaceIndex: self.selectedWorkspace,
+                    windowIndex: self.selectedWindow
+                )
+            }
+            return true
         default:
             return true
         }
@@ -442,7 +450,7 @@ private final class OverviewCardView: NSVisualEffectView {
         layer?.cornerRadius = 12
         layer?.masksToBounds = true
 
-        let hint = NSTextField(labelWithString: "h/l column · j/k row · return/m open · 1–9 jump · esc close")
+        let hint = NSTextField(labelWithString: "h/l column · j/k row · return/m open · o glance · 1–9 jump · esc close")
         hint.font = .systemFont(ofSize: OverviewMetrics.hintFontSize, weight: .medium)
         hint.textColor = .tertiaryLabelColor
 

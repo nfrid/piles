@@ -40,6 +40,7 @@ package final class WorkspaceGlance {
     private var panel: NSPanel?
     package private(set) var isVisible = false
     private var selectedWindow = 0
+    private var viewedWorkspaceIndex: Int?
 
     private init() {}
 
@@ -52,9 +53,24 @@ package final class WorkspaceGlance {
     }
 
     package func show() {
-        guard let state = GlanceState.capture() else { return }
+        viewedWorkspaceIndex = nil
+        guard let state = captureState() else { return }
         WorkspaceOverview.shared.hide()
         resetSelection(from: state)
+        isVisible = true
+        present(state: state)
+    }
+
+    package func show(workspaceIndex: Int, windowIndex: Int? = nil) {
+        viewedWorkspaceIndex = workspaceIndex
+        guard let state = captureState() else { return }
+        WorkspaceOverview.shared.hide()
+        if let windowIndex {
+            selectedWindow = windowIndex
+            clampSelection(to: state)
+        } else {
+            resetSelection(from: state)
+        }
         isVisible = true
         present(state: state)
     }
@@ -62,6 +78,7 @@ package final class WorkspaceGlance {
     package func hide() {
         guard isVisible else { return }
         isVisible = false
+        viewedWorkspaceIndex = nil
         guard let panel, panel.isVisible else {
             self.panel = nil
             return
@@ -82,7 +99,7 @@ package final class WorkspaceGlance {
 
     package func refreshIfVisible() {
         guard isVisible else { return }
-        guard let state = GlanceState.capture() else {
+        guard let state = captureState() else {
             hide()
             return
         }
@@ -160,7 +177,7 @@ package final class WorkspaceGlance {
     }
 
     private func moveWindowHorizontal(_ delta: Int) {
-        guard let state = GlanceState.capture() else { return }
+        guard let state = captureState() else { return }
         let count = state.windows.count
         let columns = GlanceMetrics.gridColumns
         guard count > 0 else { return }
@@ -176,7 +193,7 @@ package final class WorkspaceGlance {
     }
 
     private func moveWindowRow(_ delta: Int) {
-        guard let state = GlanceState.capture() else { return }
+        guard let state = captureState() else { return }
         let count = state.windows.count
         guard count > 0 else { return }
         let step = delta * GlanceMetrics.gridColumns
@@ -190,7 +207,7 @@ package final class WorkspaceGlance {
     }
 
     private func activate(windowIndex: Int) {
-        guard let state = GlanceState.capture(),
+        guard let state = captureState(),
               state.windows.indices.contains(windowIndex)
         else { return }
         WorkspaceManager.shared.focusWindow(
@@ -252,6 +269,10 @@ package final class WorkspaceGlance {
         self.panel = panel
         return panel
     }
+
+    private func captureState() -> GlanceState? {
+        GlanceState.capture(workspaceIndex: viewedWorkspaceIndex)
+    }
 }
 
 private struct GlanceState {
@@ -262,12 +283,13 @@ private struct GlanceState {
     let windows: [GlanceWindow]
     let focusedWindowIndex: Int
 
-    static func capture() -> GlanceState? {
+    static func capture(workspaceIndex: Int? = nil) -> GlanceState? {
         let ws = WorkspaceManager.shared
         guard !ws.monitors.isEmpty else { return nil }
 
         let monitor = ws.focusedMonitor
-        let workspaceIndex = monitor.active
+        let workspaceIndex = workspaceIndex ?? monitor.active
+        guard monitor.workspaces.indices.contains(workspaceIndex) else { return nil }
         let tracked = monitor.workspaces[workspaceIndex]
         let focusedIndex = tracked.isEmpty
             ? 0
