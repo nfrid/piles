@@ -239,12 +239,7 @@ package final class Monitor {
         saveFocusedIndex()
         guard let previous = state.activate(index) else { return }
 
-        let screen = WindowManager.screenRect(for: self.screen)
-        for win in workspaces[previous] {
-            win.hideOffscreen(screen)
-        }
-
-        retile()
+        revealActiveWorkspace(hiding: previous)
         restoreFocusedWindow()
     }
 
@@ -254,15 +249,11 @@ package final class Monitor {
         if index != active {
             saveFocusedIndex()
             guard let previous = state.activate(index) else { return }
-
-            let screen = WindowManager.screenRect(for: self.screen)
-            for win in workspaces[previous] {
-                win.hideOffscreen(screen)
-            }
+            revealActiveWorkspace(hiding: previous)
+        } else {
+            retile()
         }
 
-        guard rememberFocusedWindow(focused) else { return }
-        retile()
         guard rememberFocusedWindow(focused) else { return }
 
         let target = workspaces[active][focusedIndices[active]]
@@ -618,6 +609,16 @@ package final class Monitor {
         geometryRetileWork = nil
         ignoreGeometryUntil = 0
         state = MonitorState()
+    }
+
+    /// Place the active workspace on screen before moving the previous workspace offscreen
+    /// so the desktop is not exposed between AX updates.
+    private func revealActiveWorkspace(hiding previous: Int) {
+        retile()
+        let screen = WindowManager.screenRect(for: self.screen)
+        for win in workspaces[previous] {
+            win.hideOffscreen(screen)
+        }
     }
 
     func restoreFocusedWindow() {
