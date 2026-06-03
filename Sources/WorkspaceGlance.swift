@@ -38,6 +38,7 @@ package final class WorkspaceGlance: OverlaySessionHost {
     private var selectedWindow = 0
     private var viewedWorkspaceIndex: Int?
     private var pendingWindowIndex: Int?
+    private var lastRefreshFingerprint: GlanceRefreshFingerprint?
 
     private init() {}
 
@@ -75,6 +76,11 @@ package final class WorkspaceGlance: OverlaySessionHost {
 
     func overlayPresent(animated: Bool, refreshing: Bool) -> Bool {
         guard let state = captureState() else { return false }
+        let fingerprint = GlanceRefreshFingerprint(state: state)
+        if refreshing, fingerprint == lastRefreshFingerprint {
+            return true
+        }
+        lastRefreshFingerprint = fingerprint
         if refreshing {
             clampSelection(to: state)
         } else if let pendingWindowIndex {
@@ -91,6 +97,7 @@ package final class WorkspaceGlance: OverlaySessionHost {
     func overlayDidHide() {
         viewedWorkspaceIndex = nil
         pendingWindowIndex = nil
+        lastRefreshFingerprint = nil
     }
 
     func overlayToggleBinding(_ config: Config) -> (key: UInt16, shift: Bool) {
@@ -189,6 +196,22 @@ package final class WorkspaceGlance: OverlaySessionHost {
     }
 }
 
+private struct GlanceRefreshFingerprint: Equatable {
+    let workspaceIndex: Int
+    let windowTokens: [Int]
+    let focusedWindowIndex: Int
+    let monitorLabel: String?
+    let visibleFrame: CGRect
+
+    init(state: GlanceState) {
+        workspaceIndex = state.workspaceIndex
+        windowTokens = state.windows.map(\.identityToken)
+        focusedWindowIndex = state.focusedWindowIndex
+        monitorLabel = state.monitorLabel
+        visibleFrame = state.screen.visibleFrame
+    }
+}
+
 private struct GlanceState {
     let screen: NSScreen
     let monitorLabel: String?
@@ -209,6 +232,7 @@ private struct GlanceState {
         let windows = tracked.enumerated().map { windowIndex, window in
             let labels = window.displayLabels()
             return GlanceWindow(
+                identityToken: window.overlayIdentityToken,
                 appName: labels.appName,
                 windowTitle: labels.windowTitle,
                 icon: window.appIcon(),
@@ -229,6 +253,7 @@ private struct GlanceState {
 }
 
 private struct GlanceWindow {
+    let identityToken: Int
     let appName: String
     let windowTitle: String
     let icon: NSImage

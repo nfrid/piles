@@ -51,8 +51,6 @@ package final class StatusBar: NSObject {
     func update() {
         defer {
             MonocleBar.shared.update()
-            WorkspaceOverview.shared.refreshIfVisible()
-            WorkspaceGlance.shared.refreshIfVisible()
         }
 
         let ws = WorkspaceManager.shared

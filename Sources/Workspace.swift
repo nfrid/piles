@@ -314,7 +314,13 @@ package final class WorkspaceManager {
 
     private func performScreenChange() {
         screenChangeWork = nil
+        for monitor in monitors {
+            monitor.cancelPendingWork()
+        }
         let old = Dictionary(uniqueKeysWithValues: monitors.map { ($0.displayID, $0) })
+        for oldMonitor in old.values {
+            oldMonitor.cancelPendingWork()
+        }
         let oldPrimaryID = primaryDisplayID()
         let focusedDisplayID = monitors.isEmpty ? 0 : focusedMonitor.displayID
         rebuildMonitors()
@@ -329,7 +335,7 @@ package final class WorkspaceManager {
         for (id, oldMonitor) in old where !currentIDs.contains(id) {
             let target = monitors[0]
             for ws in oldMonitor.workspaces {
-                for window in ws {
+                for window in ws where !target.containsWindow(window) {
                     target.workspaces[target.active].insert(window, at: 0)
                 }
             }
@@ -391,6 +397,8 @@ package final class WorkspaceManager {
         }
         if refreshUI {
             StatusBar.shared.update()
+            WorkspaceOverview.shared.refreshIfVisible()
+            WorkspaceGlance.shared.refreshIfVisible()
         }
     }
 

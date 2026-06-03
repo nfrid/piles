@@ -136,6 +136,10 @@ struct TrackedWindow: Equatable {
         referenceIdentities
     }
 
+    package var overlayIdentityToken: Int {
+        identityKeys.map(\.hashValue).max() ?? Int(truncatingIfNeeded: UInt32(pid))
+    }
+
     func getFrame() -> CGRect? {
         WindowManager.frame(of: element)
     }

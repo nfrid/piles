@@ -122,12 +122,16 @@ package final class WindowObserver {
         DebugLog.write("ax notification=\(notif) pid=\(pidValue)")
 
         if notif == kAXWindowCreatedNotification {
-            WindowObserver.shared.trySyncWindows(pid: pidValue, attempt: 0)
+            MainThread.run {
+                WindowObserver.shared.trySyncWindows(pid: pidValue, attempt: 0)
+            }
         } else if notif == kAXUIElementDestroyedNotification {
-            WindowObserver.shared.stopObservingWindow(element: element, pid: pidValue)
-            let windows = WindowManager.windows(pid: pidValue) ?? []
-            DebugLog.write("destroy sync pid=\(pidValue) windows=\(DebugLog.describe(windows))")
-            WorkspaceManager.shared.syncWindows(pid: pidValue, windows: windows)
+            MainThread.run {
+                WindowObserver.shared.stopObservingWindow(element: element, pid: pidValue)
+                let windows = WindowManager.windows(pid: pidValue) ?? []
+                DebugLog.write("destroy sync pid=\(pidValue) windows=\(DebugLog.describe(windows))")
+                WorkspaceManager.shared.syncWindows(pid: pidValue, windows: windows)
+            }
         } else if notif == kAXFocusedWindowChangedNotification || notif == kAXFocusedUIElementChangedNotification {
             WorkspaceManager.shared.followExternalFocus(pid: pidValue)
         } else if notif == kAXMovedNotification || notif == kAXResizedNotification {

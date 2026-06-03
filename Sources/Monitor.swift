@@ -24,7 +24,7 @@ package final class Monitor {
         set { state[keyPath: keyPath] = newValue }
     }
 
-    private var retileScheduled = false
+    private var retileWork: DispatchWorkItem?
     private var geometryRetileWork: DispatchWorkItem?
     private var ignoreGeometryUntil: TimeInterval = 0
 
@@ -163,10 +163,16 @@ package final class Monitor {
         removeWindows { window in
             let stale = window.pid == pid && !current.contains(window)
             guard stale else { return false }
-            let remove = WindowManager.isAppHidden(pid: pid) || !window.isTrackable()
-            DebugLog.write("monitor \(displayID) stale pid=\(pid) remove=\(remove) window=\(DebugLog.describe(window))")
-            return remove
+            DebugLog.write("monitor \(displayID) stale pid=\(pid) window=\(DebugLog.describe(window))")
+            return true
         }
+    }
+
+    func cancelPendingWork() {
+        geometryRetileWork?.cancel()
+        geometryRetileWork = nil
+        retileWork?.cancel()
+        retileWork = nil
     }
 
     func containsWindow(_ window: TrackedWindow) -> Bool {
@@ -230,12 +236,13 @@ package final class Monitor {
     }
 
     private func scheduleRetile() {
-        guard !retileScheduled else { return }
-        retileScheduled = true
-        DispatchQueue.main.async { [self] in
-            retileScheduled = false
+        guard retileWork == nil else { return }
+        let work = DispatchWorkItem { [self] in
+            retileWork = nil
             retile()
         }
+        retileWork = work
+        DispatchQueue.main.async(execute: work)
     }
 
     func scheduleCorrectiveRetile() {
@@ -389,8 +396,7 @@ package final class Monitor {
     }
 
     func resetState() {
-        geometryRetileWork?.cancel()
-        geometryRetileWork = nil
+        cancelPendingWork()
         ignoreGeometryUntil = 0
         state = MonitorState()
     }

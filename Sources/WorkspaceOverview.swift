@@ -16,6 +16,7 @@ package final class WorkspaceOverview: OverlaySessionHost {
     package var isVisible: Bool { session.isVisible }
     private var selectedWorkspace = 0
     private var selectedWindow = 0
+    private var lastRefreshFingerprint: OverviewRefreshFingerprint?
 
     private init() {}
 
@@ -45,6 +46,11 @@ package final class WorkspaceOverview: OverlaySessionHost {
 
     func overlayPresent(animated: Bool, refreshing: Bool) -> Bool {
         guard let state = OverviewState.capture() else { return false }
+        let fingerprint = OverviewRefreshFingerprint(state: state)
+        if refreshing, fingerprint == lastRefreshFingerprint {
+            return true
+        }
+        lastRefreshFingerprint = fingerprint
         if refreshing {
             clampSelection(to: state)
         } else {
@@ -54,7 +60,9 @@ package final class WorkspaceOverview: OverlaySessionHost {
         return true
     }
 
-    func overlayDidHide() {}
+    func overlayDidHide() {
+        lastRefreshFingerprint = nil
+    }
 
     func overlayToggleBinding(_ config: Config) -> (key: UInt16, shift: Bool) {
         config.bindings.workspaceOverview
@@ -181,6 +189,24 @@ private struct OverviewSelection {
     let window: Int
 }
 
+private struct OverviewRefreshFingerprint: Equatable {
+    let activeWorkspace: Int
+    let workspaceCount: Int
+    let workspaces: [[Int]]
+    let focusedIndices: [Int]
+    let monitorLabel: String?
+    let visibleFrame: CGRect
+
+    init(state: OverviewState) {
+        activeWorkspace = state.activeWorkspace
+        workspaceCount = state.workspaceCount
+        workspaces = state.workspaces.map { $0.windows.map(\.identityToken) }
+        focusedIndices = state.workspaces.map(\.focusedWindowIndex)
+        monitorLabel = state.monitorLabel
+        visibleFrame = state.screen.visibleFrame
+    }
+}
+
 private struct OverviewState {
     let screen: NSScreen
     let monitorLabel: String?
@@ -202,6 +228,7 @@ private struct OverviewState {
             let focusedIndex = monitor.clampedFocus(in: index)
             let items = windows.enumerated().map { windowIndex, window in
                 OverviewWindow(
+                    identityToken: window.overlayIdentityToken,
                     title: window.displayTitle(),
                     icon: window.appIcon(),
                     focused: windowIndex == focusedIndex
@@ -238,6 +265,7 @@ private struct OverviewWorkspace {
 }
 
 private struct OverviewWindow {
+    let identityToken: Int
     let title: String
     let icon: NSImage
     let focused: Bool
