@@ -10,92 +10,87 @@ private enum OverviewMetrics {
     static let windowRowSpacing: CGFloat = 6
 }
 
-package final class WorkspaceOverview {
+package final class WorkspaceOverview: OverlaySessionHost {
     package static let shared = WorkspaceOverview()
-    private let panelController = OverlayPanelController()
-    package private(set) var isVisible = false
+    private lazy var session: OverlaySession = OverlaySession(host: self)
+    package var isVisible: Bool { session.isVisible }
     private var selectedWorkspace = 0
     private var selectedWindow = 0
 
     private init() {}
 
     package func toggle() {
-        if isVisible {
-            hide()
-        } else {
-            show()
-        }
+        session.toggle()
     }
 
     package func show() {
-        guard let state = OverviewState.capture() else { return }
-        WorkspaceGlance.shared.hide()
-        resetSelection(from: state)
-        isVisible = true
-        present(state: state)
+        session.show()
     }
 
     package func hide() {
-        guard isVisible else { return }
-        isVisible = false
-        panelController.dismiss { !self.isVisible }
+        session.hide()
     }
 
     package func refreshIfVisible() {
-        guard isVisible else { return }
-        guard let state = OverviewState.capture() else {
-            hide()
-            return
-        }
-        clampSelection(to: state)
-        present(state: state, animated: false)
+        session.refreshIfVisible()
     }
 
     package func handleKey(keyCode: UInt16, flags: CGEventFlags, config: Config) -> Bool {
-        guard isVisible else { return false }
+        session.handleKey(keyCode: keyCode, flags: flags, config: config)
+    }
 
-        if keyCode == Key.o,
-           !flags.contains(.maskShift),
-           !flags.contains(.maskCommand),
-           !config.matchesConfiguredModifier(flags) {
-            MainThread.run {
-                WorkspaceGlance.shared.show(
-                    workspaceIndex: self.selectedWorkspace,
-                    windowIndex: self.selectedWindow
-                )
-            }
-            return true
-        }
+    func overlayPrepareToShow() {
+        WorkspaceGlance.shared.hide()
+    }
 
-        switch OverlayKeyInput.resolve(
-            keyCode: keyCode,
-            flags: flags,
-            config: config,
-            toggleBinding: config.bindings.workspaceOverview
-        ) {
-        case .passThrough:
-            return false
-        case .dismiss:
-            MainThread.run { self.hide() }
-            return true
-        case .navigateHorizontal(let delta):
-            MainThread.run { self.moveWorkspaceHorizontal(delta) }
-            return true
-        case .navigateVertical(let delta):
-            MainThread.run { self.moveWorkspaceRow(delta) }
-            return true
-        case .confirm:
-            MainThread.run { self.confirmSelection() }
-            return true
-        case .numberJump(let index):
-            MainThread.run {
-                self.activate(workspaceIndex: index, windowIndex: nil)
-                self.hide()
-            }
-            return true
-        case .unrecognized:
-            return true
+    func overlayPresent(animated: Bool, refreshing: Bool) -> Bool {
+        guard let state = OverviewState.capture() else { return false }
+        if refreshing {
+            clampSelection(to: state)
+        } else {
+            resetSelection(from: state)
         }
+        present(state: state, animated: animated)
+        return true
+    }
+
+    func overlayDidHide() {}
+
+    func overlayToggleBinding(_ config: Config) -> (key: UInt16, shift: Bool) {
+        config.bindings.workspaceOverview
+    }
+
+    func overlayHandleExtraKey(keyCode: UInt16, flags: CGEventFlags, config: Config) -> Bool {
+        guard keyCode == Key.o,
+              !flags.contains(.maskShift),
+              !flags.contains(.maskCommand),
+              !config.matchesConfiguredModifier(flags)
+        else { return false }
+
+        MainThread.run {
+            WorkspaceGlance.shared.show(
+                workspaceIndex: self.selectedWorkspace,
+                windowIndex: self.selectedWindow
+            )
+        }
+        return true
+    }
+
+    func overlayConfirm() {
+        confirmSelection()
+        hide()
+    }
+
+    func overlayNavigateHorizontal(delta: Int) {
+        moveWorkspaceHorizontal(delta)
+    }
+
+    func overlayNavigateVertical(delta: Int) {
+        moveWorkspaceRow(delta)
+    }
+
+    func overlayNumberJump(index: Int) {
+        activate(workspaceIndex: index, windowIndex: nil)
     }
 
     private func resetSelection(from state: OverviewState) {
@@ -118,37 +113,30 @@ package final class WorkspaceOverview {
 
     private func moveWorkspaceHorizontal(_ delta: Int) {
         guard let state = OverviewState.capture() else { return }
-        let count = state.workspaces.count
-        guard let next = OverlayGridNavigation.moveHorizontal(
-            selected: selectedWorkspace,
+        guard OverlayGridSelection.moveHorizontal(
+            selected: &selectedWorkspace,
             delta: delta,
-            count: count,
-            columns: OverlayMetrics.gridColumns
+            count: state.workspaces.count
         ) else { return }
 
-        selectedWorkspace = next
         syncWindowSelection(from: state)
         present(state: state, animated: false)
     }
 
     private func moveWorkspaceRow(_ delta: Int) {
         guard let state = OverviewState.capture() else { return }
-        let count = state.workspaces.count
-        guard let next = OverlayGridNavigation.moveRow(
-            selected: selectedWorkspace,
+        guard OverlayGridSelection.moveRow(
+            selected: &selectedWorkspace,
             delta: delta,
-            count: count,
-            columns: OverlayMetrics.gridColumns
+            count: state.workspaces.count
         ) else { return }
 
-        selectedWorkspace = next
         syncWindowSelection(from: state)
         present(state: state, animated: false)
     }
 
     private func confirmSelection() {
         WorkspaceManager.shared.switchTo(selectedWorkspace)
-        hide()
     }
 
     private func activate(workspaceIndex: Int, windowIndex: Int?) {
@@ -184,7 +172,7 @@ package final class WorkspaceOverview {
                 self?.hide()
             }
         )
-        panelController.present(contentView: contentView, on: state.screen, animated: animated)
+        session.present(contentView: contentView, on: state.screen, animated: animated)
     }
 }
 

@@ -31,95 +31,91 @@ private enum GlanceMetrics {
     }
 }
 
-package final class WorkspaceGlance {
+package final class WorkspaceGlance: OverlaySessionHost {
     package static let shared = WorkspaceGlance()
-    private let panelController = OverlayPanelController()
-    package private(set) var isVisible = false
+    private lazy var session: OverlaySession = OverlaySession(host: self)
+    package var isVisible: Bool { session.isVisible }
     private var selectedWindow = 0
     private var viewedWorkspaceIndex: Int?
+    private var pendingWindowIndex: Int?
 
     private init() {}
 
     package func toggle() {
-        if isVisible {
-            hide()
-        } else {
-            show()
-        }
+        session.toggle()
     }
 
     package func show() {
         viewedWorkspaceIndex = nil
-        guard let state = captureState() else { return }
-        WorkspaceOverview.shared.hide()
-        resetSelection(from: state)
-        isVisible = true
-        present(state: state)
+        pendingWindowIndex = nil
+        session.show()
     }
 
     package func show(workspaceIndex: Int, windowIndex: Int? = nil) {
         viewedWorkspaceIndex = workspaceIndex
-        guard let state = captureState() else { return }
+        pendingWindowIndex = windowIndex
+        session.show()
+    }
+
+    package func hide() {
+        session.hide()
+    }
+
+    package func refreshIfVisible() {
+        session.refreshIfVisible()
+    }
+
+    package func handleKey(keyCode: UInt16, flags: CGEventFlags, config: Config) -> Bool {
+        session.handleKey(keyCode: keyCode, flags: flags, config: config)
+    }
+
+    func overlayPrepareToShow() {
         WorkspaceOverview.shared.hide()
-        if let windowIndex {
-            selectedWindow = windowIndex
+    }
+
+    func overlayPresent(animated: Bool, refreshing: Bool) -> Bool {
+        guard let state = captureState() else { return false }
+        if refreshing {
+            clampSelection(to: state)
+        } else if let pendingWindowIndex {
+            selectedWindow = pendingWindowIndex
+            self.pendingWindowIndex = nil
             clampSelection(to: state)
         } else {
             resetSelection(from: state)
         }
-        isVisible = true
-        present(state: state)
+        present(state: state, animated: animated)
+        return true
     }
 
-    package func hide() {
-        guard isVisible else { return }
-        isVisible = false
+    func overlayDidHide() {
         viewedWorkspaceIndex = nil
-        panelController.dismiss { !self.isVisible }
+        pendingWindowIndex = nil
     }
 
-    package func refreshIfVisible() {
-        guard isVisible else { return }
-        guard let state = captureState() else {
-            hide()
-            return
-        }
-        clampSelection(to: state)
-        present(state: state, animated: false)
+    func overlayToggleBinding(_ config: Config) -> (key: UInt16, shift: Bool) {
+        config.bindings.workspaceGlance
     }
 
-    package func handleKey(keyCode: UInt16, flags: CGEventFlags, config: Config) -> Bool {
-        guard isVisible else { return false }
+    func overlayHandleExtraKey(keyCode: UInt16, flags: CGEventFlags, config: Config) -> Bool {
+        false
+    }
 
-        switch OverlayKeyInput.resolve(
-            keyCode: keyCode,
-            flags: flags,
-            config: config,
-            toggleBinding: config.bindings.workspaceGlance
-        ) {
-        case .passThrough:
-            return false
-        case .dismiss:
-            MainThread.run { self.hide() }
-            return true
-        case .navigateHorizontal(let delta):
-            MainThread.run { self.moveWindowHorizontal(delta) }
-            return true
-        case .navigateVertical(let delta):
-            MainThread.run { self.moveWindowRow(delta) }
-            return true
-        case .confirm:
-            MainThread.run { self.confirmSelection() }
-            return true
-        case .numberJump(let index):
-            MainThread.run {
-                self.activate(windowIndex: index)
-                self.hide()
-            }
-            return true
-        case .unrecognized:
-            return true
-        }
+    func overlayConfirm() {
+        confirmSelection()
+        hide()
+    }
+
+    func overlayNavigateHorizontal(delta: Int) {
+        moveWindowHorizontal(delta)
+    }
+
+    func overlayNavigateVertical(delta: Int) {
+        moveWindowRow(delta)
+    }
+
+    func overlayNumberJump(index: Int) {
+        activate(windowIndex: index)
     }
 
     private func resetSelection(from state: GlanceState) {
@@ -136,35 +132,28 @@ package final class WorkspaceGlance {
 
     private func moveWindowHorizontal(_ delta: Int) {
         guard let state = captureState() else { return }
-        let count = state.windows.count
-        guard let next = OverlayGridNavigation.moveHorizontal(
-            selected: selectedWindow,
+        guard OverlayGridSelection.moveHorizontal(
+            selected: &selectedWindow,
             delta: delta,
-            count: count,
-            columns: OverlayMetrics.gridColumns
+            count: state.windows.count
         ) else { return }
 
-        selectedWindow = next
         present(state: state, animated: false)
     }
 
     private func moveWindowRow(_ delta: Int) {
         guard let state = captureState() else { return }
-        let count = state.windows.count
-        guard let next = OverlayGridNavigation.moveRow(
-            selected: selectedWindow,
+        guard OverlayGridSelection.moveRow(
+            selected: &selectedWindow,
             delta: delta,
-            count: count,
-            columns: OverlayMetrics.gridColumns
+            count: state.windows.count
         ) else { return }
 
-        selectedWindow = next
         present(state: state, animated: false)
     }
 
     private func confirmSelection() {
         activate(windowIndex: selectedWindow)
-        hide()
     }
 
     private func activate(windowIndex: Int) {
@@ -192,7 +181,7 @@ package final class WorkspaceGlance {
                 self?.hide()
             }
         )
-        panelController.present(contentView: contentView, on: state.screen, animated: animated)
+        session.present(contentView: contentView, on: state.screen, animated: animated)
     }
 
     private func captureState() -> GlanceState? {
