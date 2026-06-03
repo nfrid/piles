@@ -100,7 +100,6 @@ enum SelectionCellStyle {
 }
 
 final class OverlayPanelController {
-    private let animationDuration: TimeInterval = 0.14
     private var panel: NSPanel?
 
     func present(contentView: NSView, on screen: NSScreen, animated: Bool) {
@@ -118,11 +117,7 @@ final class OverlayPanelController {
             return
         }
 
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = animationDuration
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            panel.animator().alphaValue = 1
-        }
+        PanelAnimation.fadeIn(panel)
     }
 
     func dismiss(ifStillHidden: @escaping () -> Bool) {
@@ -131,11 +126,7 @@ final class OverlayPanelController {
             return
         }
 
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = animationDuration
-            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
-            panel.animator().alphaValue = 0
-        } completionHandler: {
+        PanelAnimation.fadeOut(panel) {
             panel.orderOut(nil)
             panel.alphaValue = 1
             if ifStillHidden() {
@@ -149,19 +140,7 @@ final class OverlayPanelController {
             return panel
         }
 
-        let panel = NSPanel(
-            contentRect: screen.frame,
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = false
-        panel.hidesOnDeactivate = false
-        panel.ignoresMouseEvents = false
-        panel.level = .modalPanel
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        let panel = FloatingPanel.make(contentRect: screen.frame, style: FloatingPanel.overlay)
         self.panel = panel
         return panel
     }

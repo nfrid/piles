@@ -6,7 +6,6 @@ package final class MonocleBar {
     private let height: CGFloat = 34
     private let horizontalMargin: CGFloat = 12
     private let bottomMargin: CGFloat = 10
-    private let animationDuration: TimeInterval = 0.12
     private var panels: [CGDirectDisplayID: NSPanel] = [:]
     private var lastState: MonocleBarState?
     private var optionHeld = false
@@ -50,19 +49,7 @@ package final class MonocleBar {
             return panel
         }
 
-        let panel = NSPanel(
-            contentRect: .zero,
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = false
-        panel.hidesOnDeactivate = false
-        panel.ignoresMouseEvents = true
-        panel.level = .statusBar
-        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+        let panel = FloatingPanel.make(style: FloatingPanel.monocleBar)
         panels[displayID] = panel
         return panel
     }
@@ -104,9 +91,7 @@ package final class MonocleBar {
             panel.orderFrontRegardless()
         }
 
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = animationDuration
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        PanelAnimation.run(duration: PanelAnimation.monocleDuration, timing: .easeOut) {
             panel.animator().setFrame(target, display: true)
             panel.animator().alphaValue = 1
         }
@@ -131,16 +116,14 @@ package final class MonocleBar {
         target.origin.y = panel.screen?.visibleFrame.minY ?? target.minY - height
         target.origin.y -= height
 
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = animationDuration
-            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+        PanelAnimation.run(duration: PanelAnimation.monocleDuration, timing: .easeIn, changes: {
             panel.animator().setFrame(target, display: true)
             panel.animator().alphaValue = 0
-        } completionHandler: {
+        }, completion: {
             guard !cancelIfOptionHeld || !self.optionHeld else { return }
             panel.orderOut(nil)
             panel.alphaValue = 1
-        }
+        })
     }
 }
 
