@@ -74,8 +74,8 @@ package final class MonocleBar {
 
     private func visibleFrame(screen: NSScreen, contentWidth: CGFloat) -> NSRect {
         let visible = screen.visibleFrame
-        let maxWidth = max(160, visible.width - horizontalMargin * 2)
-        let width = min(maxWidth, max(160, contentWidth))
+        let maxWidth = visible.width - horizontalMargin * 2
+        let width = min(maxWidth, contentWidth)
         return NSRect(
             x: visible.midX - width / 2,
             y: visible.minY + bottomMargin,
