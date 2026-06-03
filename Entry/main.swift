@@ -21,21 +21,26 @@ func checkAccessibility() -> Bool {
     return AXIsProcessTrustedWithOptions(options)
 }
 
-func setupCrashSafety() {
-    let restore = {
-        IPCServer.shared.stop()
-        WorkspaceManager.shared.restoreAllWindows()
-    }
+private var screenObserver: NSObjectProtocol?
 
+func setupCrashSafety() {
     let terminate = {
-        restore()
+        PilesTeardown.shutdown()
         NSApplication.shared.terminate(nil)
     }
     installSignalHandler(SIGTERM, queue: .main, handler: terminate)
     installSignalHandler(SIGINT, queue: .main, handler: terminate)
 
+    NotificationCenter.default.addObserver(
+        forName: NSApplication.willTerminateNotification,
+        object: nil,
+        queue: .main
+    ) { _ in
+        PilesTeardown.shutdown()
+    }
+
     atexit {
-        WorkspaceManager.shared.restoreAllWindows()
+        PilesTeardown.shutdown()
     }
 }
 
@@ -70,7 +75,7 @@ IPCServer.shared.start()
 let observer = WindowObserver.shared
 observer.start()
 
-NotificationCenter.default.addObserver(
+screenObserver = NotificationCenter.default.addObserver(
     forName: NSApplication.didChangeScreenParametersNotification,
     object: nil, queue: .main
 ) { _ in

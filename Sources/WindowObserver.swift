@@ -7,15 +7,30 @@ package final class WindowObserver {
     private static let maxRetries = 10
     private static let retryInterval: TimeInterval = 0.05
 
+    private static let appNotifications: [CFString] = [
+        kAXWindowCreatedNotification,
+        kAXFocusedWindowChangedNotification,
+        kAXFocusedUIElementChangedNotification,
+    ].map { $0 as CFString }
+
+    private static let windowNotifications: [CFString] = [
+        kAXUIElementDestroyedNotification,
+        kAXMovedNotification,
+        kAXResizedNotification,
+    ].map { $0 as CFString }
+
     private var observers: [pid_t: AXObserver] = [:]
     private var observedWindows: [pid_t: Set<WindowIdentityKey>] = [:]
+    private var workspaceObservers: [NSObjectProtocol] = []
+    private var stopped = false
 
     private init() {}
 
     package func start() {
+        stopped = false
         let nc = NSWorkspace.shared.notificationCenter
 
-        nc.addObserver(
+        workspaceObservers.append(nc.addObserver(
             forName: NSWorkspace.didLaunchApplicationNotification,
             object: nil, queue: .main
         ) { [weak self] note in
@@ -23,20 +38,19 @@ package final class WindowObserver {
                   app.activationPolicy == .regular
             else { return }
             self?.handleAppLaunched(app)
-        }
+        })
 
-        nc.addObserver(
+        workspaceObservers.append(nc.addObserver(
             forName: NSWorkspace.didTerminateApplicationNotification,
             object: nil, queue: .main
         ) { note in
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
             let pid = app.processIdentifier
             WorkspaceManager.shared.removeWindow(pid: pid)
-            WindowObserver.shared.observers.removeValue(forKey: pid)
-            WindowObserver.shared.observedWindows.removeValue(forKey: pid)
-        }
+            WindowObserver.shared.stopObservingApp(pid: pid)
+        })
 
-        nc.addObserver(
+        workspaceObservers.append(nc.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification,
             object: nil, queue: .main
         ) { note in
@@ -44,17 +58,17 @@ package final class WindowObserver {
                   app.activationPolicy == .regular
             else { return }
             WorkspaceManager.shared.followExternalFocus(pid: app.processIdentifier)
-        }
+        })
 
-        nc.addObserver(
+        workspaceObservers.append(nc.addObserver(
             forName: NSWorkspace.didHideApplicationNotification,
             object: nil, queue: .main
         ) { note in
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
             WorkspaceManager.shared.syncWindows(pid: app.processIdentifier, windows: [])
-        }
+        })
 
-        nc.addObserver(
+        workspaceObservers.append(nc.addObserver(
             forName: NSWorkspace.didUnhideApplicationNotification,
             object: nil, queue: .main
         ) { note in
@@ -62,7 +76,7 @@ package final class WindowObserver {
                   app.activationPolicy == .regular
             else { return }
             WindowObserver.shared.trySyncWindows(pid: app.processIdentifier, attempt: 0)
-        }
+        })
 
         for app in NSWorkspace.shared.runningApplications {
             guard app.activationPolicy == .regular else { continue }
@@ -74,13 +88,32 @@ package final class WindowObserver {
         }
     }
 
+    package func stop() {
+        guard !stopped else { return }
+        stopped = true
+
+        let nc = NSWorkspace.shared.notificationCenter
+        for token in workspaceObservers {
+            nc.removeObserver(token)
+        }
+        workspaceObservers.removeAll()
+
+        for pid in observers.keys {
+            stopObservingApp(pid: pid)
+        }
+        observers.removeAll()
+        observedWindows.removeAll()
+    }
+
     private func handleAppLaunched(_ app: NSRunningApplication) {
+        guard !stopped else { return }
         let pid = app.processIdentifier
         observeApp(pid: pid)
         trySyncWindows(pid: pid, attempt: 0)
     }
 
     private func trySyncWindows(pid: pid_t, attempt: Int) {
+        guard !stopped else { return }
         guard let windows = WindowManager.windows(pid: pid), !windows.isEmpty else {
             DebugLog.write("sync retry pid=\(pid) attempt=\(attempt)")
             retrySyncWindows(pid: pid, attempt: attempt)
@@ -93,14 +126,14 @@ package final class WindowObserver {
     }
 
     private func retrySyncWindows(pid: pid_t, attempt: Int) {
-        guard attempt < Self.maxRetries else { return }
+        guard !stopped, attempt < Self.maxRetries else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.retryInterval) {
             self.trySyncWindows(pid: pid, attempt: attempt + 1)
         }
     }
 
     private func observeApp(pid: pid_t) {
-        guard observers[pid] == nil else { return }
+        guard !stopped, observers[pid] == nil else { return }
 
         var observer: AXObserver?
         let result = AXObserverCreate(pid, WindowObserver.axCallback, &observer)
@@ -110,9 +143,34 @@ package final class WindowObserver {
         addNotification(obs, appRef, kAXWindowCreatedNotification as CFString, context: "pid=\(pid) target=app")
         addNotification(obs, appRef, kAXFocusedWindowChangedNotification as CFString, context: "pid=\(pid) target=app")
         addNotification(obs, appRef, kAXFocusedUIElementChangedNotification as CFString, context: "pid=\(pid) target=app")
-        CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(obs), .defaultMode)
+        CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(obs), .commonModes)
 
         observers[pid] = obs
+    }
+
+    private func stopObservingApp(pid: pid_t) {
+        guard let obs = observers.removeValue(forKey: pid) else { return }
+
+        let appRef = AXUIElementCreateApplication(pid)
+        for notification in Self.appNotifications {
+            removeNotification(obs, appRef, notification, context: "pid=\(pid) target=app shutdown")
+        }
+
+        if let keys = observedWindows.removeValue(forKey: pid) {
+            for key in keys {
+                for notification in Self.windowNotifications {
+                    removeNotification(
+                        obs,
+                        key.element,
+                        notification,
+                        context: "pid=\(pid) target=window shutdown"
+                    )
+                }
+            }
+        }
+
+        let source = AXObserverGetRunLoopSource(obs)
+        CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
     }
 
     private static let axCallback: AXObserverCallback = { _, element, notification, _ in
@@ -145,14 +203,8 @@ package final class WindowObserver {
         var observed = observedWindows[pid] ?? []
         guard observed.insert(key).inserted else { return }
 
-        let notifications = [
-            kAXUIElementDestroyedNotification,
-            kAXMovedNotification,
-            kAXResizedNotification,
-        ].map { $0 as CFString }
-
         var added: [CFString] = []
-        for notification in notifications {
+        for notification in Self.windowNotifications {
             guard addNotification(obs, element, notification, context: "pid=\(pid) target=window") else {
                 for previous in added {
                     removeNotification(obs, element, previous, context: "pid=\(pid) target=window cleanup=partial")
@@ -182,12 +234,8 @@ package final class WindowObserver {
               observed.remove(key) != nil
         else { return }
 
-        for name in [
-            kAXUIElementDestroyedNotification,
-            kAXMovedNotification,
-            kAXResizedNotification,
-        ] {
-            removeNotification(obs, element, name as CFString, context: "pid=\(pid) target=window")
+        for notification in Self.windowNotifications {
+            removeNotification(obs, element, notification, context: "pid=\(pid) target=window")
         }
         observedWindows[pid] = observed.isEmpty ? nil : observed
     }

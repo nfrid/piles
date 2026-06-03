@@ -81,6 +81,7 @@ package final class Hotkeys {
     package static let shared = Hotkeys()
 
     private var tap: CFMachPort?
+    private var runLoopSource: CFRunLoopSource?
     private var resizingMasterRatio = false
     private let resolver = HotkeyResolver()
 
@@ -112,8 +113,24 @@ package final class Hotkeys {
 
         self.tap = tap
         let source = CFMachPortCreateRunLoopSource(nil, tap, 0)
+        runLoopSource = source
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
+    }
+
+    package func stop() {
+        resizingMasterRatio = false
+        if let tap {
+            CGEvent.tapEnable(tap: tap, enable: false)
+        }
+        if let source = runLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
+            runLoopSource = nil
+        }
+        if let tap {
+            CFMachPortInvalidate(tap)
+            self.tap = nil
+        }
     }
 
     private static let callback: CGEventTapCallBack = { _, type, event, _ in

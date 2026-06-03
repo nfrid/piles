@@ -71,6 +71,18 @@ enum HotkeyTests {
             "default workspace glance resolves"
         )
 
+        Hotkeys.shared.stop()
+        Hotkeys.shared.stop()
+        check(true, "hotkeys stop is idempotent")
+
+        WindowObserver.shared.stop()
+        WindowObserver.shared.stop()
+        check(true, "window observer stop is idempotent")
+
+        PilesTeardown.shutdown()
+        PilesTeardown.shutdown()
+        check(true, "piles teardown is idempotent")
+
         return (passed, failed)
     }
 }
