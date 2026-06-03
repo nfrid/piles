@@ -4,11 +4,13 @@ private enum OverviewMetrics {
     static let screenFraction: CGFloat = 0.8
     static let gridColumns = 3
     static let headerFontSize: CGFloat = 17
-    static let bodyFontSize: CGFloat = 13
+    static let bodyFontSize: CGFloat = 15
     static let hintFontSize: CGFloat = 12
     static let cellPadding: CGFloat = 8
-    static let windowRowHeight: CGFloat = 22
-    static let windowRowSpacing: CGFloat = 4
+    static let windowRowHeight: CGFloat = 28
+    static let windowIconSize: CGFloat = 18
+    static let windowIconGap: CGFloat = 8
+    static let windowRowSpacing: CGFloat = 6
 }
 
 package final class WorkspaceOverview {
@@ -285,6 +287,7 @@ private struct OverviewState {
             let items = windows.enumerated().map { windowIndex, window in
                 OverviewWindow(
                     title: windowLabel(for: window),
+                    icon: window.appIcon(),
                     focused: windowIndex == focusedIndex
                 )
             }
@@ -332,6 +335,7 @@ private struct OverviewWorkspace {
 
 private struct OverviewWindow {
     let title: String
+    let icon: NSImage
     let focused: Bool
 }
 
@@ -576,7 +580,7 @@ private final class OverviewWorkspaceCell: NSView {
         windowList = NSStackView()
         windowList.orientation = .vertical
         windowList.alignment = .leading
-        windowList.distribution = .fill
+        windowList.distribution = .gravityAreas
         windowList.spacing = OverviewMetrics.windowRowSpacing
         windowList.translatesAutoresizingMaskIntoConstraints = false
 
@@ -629,11 +633,14 @@ private final class OverviewWorkspaceCell: NSView {
         } else {
             for (index, window) in workspace.windows.enumerated() {
                 let rowSelected = selected && index == selectedWindow
-                windowList.addArrangedSubview(OverviewWindowRow(
+                let row = OverviewWindowRow(
                     title: window.title,
+                    icon: window.icon,
                     selected: rowSelected || window.focused,
                     action: { onSelectWindow(index) }
-                ))
+                )
+                windowList.addArrangedSubview(row)
+                row.widthAnchor.constraint(equalTo: windowList.widthAnchor).isActive = true
             }
         }
 
@@ -776,26 +783,45 @@ private final class OverviewTileClickStrip: NSView {
 private final class OverviewWindowRow: NSView {
     private let action: () -> Void
 
-    init(title: String, selected: Bool, action: @escaping () -> Void) {
+    init(title: String, icon: NSImage, selected: Bool, action: @escaping () -> Void) {
         self.action = action
         super.init(frame: .zero)
         clipsToBounds = true
-        setContentHuggingPriority(.defaultHigh, for: .vertical)
+        setContentHuggingPriority(.required, for: .vertical)
+        setContentCompressionResistancePriority(.required, for: .vertical)
         setContentHuggingPriority(.defaultLow, for: .horizontal)
         setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        let iconView = OverviewIconView()
+        iconView.image = icon
+        iconView.imageScaling = .scaleProportionallyUpOrDown
 
         let label = OverviewLabel(
             text: title,
             font: .systemFont(ofSize: OverviewMetrics.bodyFontSize, weight: selected ? .semibold : .regular),
             color: selected ? .controlAccentColor : .secondaryLabelColor
         )
-        addSubview(label)
+
+        let content = NSStackView(views: [iconView, label])
+        content.orientation = .horizontal
+        content.spacing = OverviewMetrics.windowIconGap
+        content.alignment = .centerY
+        content.distribution = .fill
+        content.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(content)
+
+        iconView.setContentHuggingPriority(.required, for: .horizontal)
+        iconView.setContentCompressionResistancePriority(.required, for: .horizontal)
+
+        let iconSize = OverviewMetrics.windowIconSize
         NSLayoutConstraint.activate([
-            label.topAnchor.constraint(equalTo: topAnchor),
-            label.leadingAnchor.constraint(equalTo: leadingAnchor),
-            label.trailingAnchor.constraint(equalTo: trailingAnchor),
-            label.bottomAnchor.constraint(equalTo: bottomAnchor),
-            heightAnchor.constraint(greaterThanOrEqualToConstant: OverviewMetrics.windowRowHeight),
+            content.topAnchor.constraint(equalTo: topAnchor),
+            content.leadingAnchor.constraint(equalTo: leadingAnchor),
+            content.trailingAnchor.constraint(equalTo: trailingAnchor),
+            content.bottomAnchor.constraint(equalTo: bottomAnchor),
+            heightAnchor.constraint(equalToConstant: OverviewMetrics.windowRowHeight),
+            iconView.widthAnchor.constraint(equalToConstant: iconSize),
+            iconView.heightAnchor.constraint(equalToConstant: iconSize),
         ])
     }
 
@@ -808,6 +834,20 @@ private final class OverviewWindowRow: NSView {
 
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: .pointingHand)
+    }
+}
+
+private final class OverviewIconView: NSImageView {
+    init() {
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
     }
 }
 

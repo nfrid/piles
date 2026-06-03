@@ -299,7 +299,7 @@ private struct GlanceState {
             return GlanceWindow(
                 appName: labels.appName,
                 windowTitle: labels.windowTitle,
-                icon: appIcon(for: window),
+                icon: window.appIcon(),
                 focused: windowIndex == focusedIndex
             )
         }
@@ -323,17 +323,6 @@ private struct GlanceState {
         return (appName, windowTitle)
     }
 
-    private static func appIcon(for window: TrackedWindow) -> NSImage {
-        if let app = NSRunningApplication(processIdentifier: window.pid),
-           let icon = app.icon {
-            return icon
-        }
-        if let bundleID = window.bundleID(),
-           let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
-            return NSWorkspace.shared.icon(forFile: url.path)
-        }
-        return NSWorkspace.shared.icon(for: .application)
-    }
 }
 
 private struct GlanceWindow {

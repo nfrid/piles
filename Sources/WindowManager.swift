@@ -280,6 +280,18 @@ struct TrackedWindow: Equatable {
         NSRunningApplication(processIdentifier: pid)?.bundleIdentifier
     }
 
+    func appIcon() -> NSImage {
+        if let app = NSRunningApplication(processIdentifier: pid),
+           let icon = app.icon {
+            return icon
+        }
+        if let bundleID = bundleID(),
+           let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
+            return NSWorkspace.shared.icon(forFile: url.path)
+        }
+        return NSWorkspace.shared.icon(for: .application)
+    }
+
     private static func unique(_ elements: [AXUIElement]) -> [AXUIElement] {
         var result: [AXUIElement] = []
         var identities: Set<WindowIdentityKey> = []
