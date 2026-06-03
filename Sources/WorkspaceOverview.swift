@@ -6,6 +6,9 @@ private enum OverviewMetrics {
     static let headerFontSize: CGFloat = 17
     static let bodyFontSize: CGFloat = 13
     static let hintFontSize: CGFloat = 12
+    static let cellPadding: CGFloat = 8
+    static let windowRowHeight: CGFloat = 22
+    static let windowRowSpacing: CGFloat = 4
 }
 
 package final class WorkspaceOverview {
@@ -545,6 +548,12 @@ private final class OverviewTileGridView: NSView {
 }
 
 private final class OverviewWorkspaceCell: NSView {
+    private let onSelectWorkspace: () -> Void
+    private let workspaceSelected: Bool
+    private let selectedWindow: Int
+    private let windowScrollView: NSScrollView
+    private let windowList: NSStackView
+
     init(
         workspace: OverviewWorkspace,
         selected: Bool,
@@ -552,29 +561,57 @@ private final class OverviewWorkspaceCell: NSView {
         onSelectWorkspace: @escaping () -> Void,
         onSelectWindow: @escaping (Int) -> Void
     ) {
+        self.onSelectWorkspace = onSelectWorkspace
+        self.workspaceSelected = selected
+        self.selectedWindow = selectedWindow
+
+        windowList = NSStackView()
+        windowList.orientation = .vertical
+        windowList.alignment = .leading
+        windowList.distribution = .fill
+        windowList.spacing = OverviewMetrics.windowRowSpacing
+        windowList.translatesAutoresizingMaskIntoConstraints = false
+
+        windowScrollView = NSScrollView()
+        windowScrollView.hasVerticalScroller = true
+        windowScrollView.hasHorizontalScroller = false
+        windowScrollView.autohidesScrollers = true
+        windowScrollView.borderType = .noBorder
+        windowScrollView.drawsBackground = false
+        windowScrollView.translatesAutoresizingMaskIntoConstraints = false
+        windowScrollView.setContentHuggingPriority(.defaultLow, for: .vertical)
+        windowScrollView.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        windowScrollView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = 8
         applyStyle(selected: selected, workspaceActive: workspace.active)
 
-        let content = NSStackView()
-        content.orientation = .vertical
-        content.alignment = .leading
-        content.distribution = .fill
-        content.spacing = 4
-        content.translatesAutoresizingMaskIntoConstraints = false
-        content.edgeInsets = NSEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
+        let document = OverviewFlippedDocumentView()
+        document.translatesAutoresizingMaskIntoConstraints = false
+        document.addSubview(windowList)
+        windowScrollView.documentView = document
 
-        content.addArrangedSubview(OverviewTileClickStrip(action: onSelectWorkspace) {
-            OverviewLabel(
-                text: "\(workspace.number)",
-                font: .systemFont(ofSize: OverviewMetrics.headerFontSize, weight: .bold),
-                color: selected ? .controlAccentColor : .labelColor
-            )
-        })
+        NSLayoutConstraint.activate([
+            windowList.topAnchor.constraint(equalTo: document.topAnchor),
+            windowList.leadingAnchor.constraint(equalTo: document.leadingAnchor),
+            windowList.trailingAnchor.constraint(equalTo: document.trailingAnchor),
+            windowList.bottomAnchor.constraint(equalTo: document.bottomAnchor),
+            windowList.widthAnchor.constraint(equalTo: document.widthAnchor),
+
+            document.leadingAnchor.constraint(equalTo: windowScrollView.contentView.leadingAnchor),
+            document.trailingAnchor.constraint(equalTo: windowScrollView.contentView.trailingAnchor),
+            document.topAnchor.constraint(equalTo: windowScrollView.contentView.topAnchor),
+            document.widthAnchor.constraint(equalTo: windowScrollView.contentView.widthAnchor),
+            document.bottomAnchor.constraint(equalTo: windowList.bottomAnchor),
+            document.bottomAnchor.constraint(
+                greaterThanOrEqualTo: windowScrollView.contentView.bottomAnchor
+            ),
+        ])
 
         if workspace.windows.isEmpty {
-            content.addArrangedSubview(OverviewTileClickStrip(action: onSelectWorkspace) {
+            windowList.addArrangedSubview(OverviewTileClickStrip(action: onSelectWorkspace) {
                 OverviewLabel(
                     text: "empty",
                     font: .systemFont(ofSize: OverviewMetrics.bodyFontSize, weight: .medium),
@@ -584,7 +621,7 @@ private final class OverviewWorkspaceCell: NSView {
         } else {
             for (index, window) in workspace.windows.enumerated() {
                 let rowSelected = selected && index == selectedWindow
-                content.addArrangedSubview(OverviewWindowRow(
+                windowList.addArrangedSubview(OverviewWindowRow(
                     title: window.title,
                     selected: rowSelected || window.focused,
                     action: { onSelectWindow(index) }
@@ -592,21 +629,93 @@ private final class OverviewWorkspaceCell: NSView {
             }
         }
 
-        let filler = OverviewTileClickStrip(action: onSelectWorkspace) { NSView() }
-        filler.setContentHuggingPriority(.defaultLow, for: .vertical)
-        content.addArrangedSubview(filler)
+        let content = NSStackView()
+        content.orientation = .vertical
+        content.alignment = .leading
+        content.distribution = .fill
+        content.spacing = OverviewMetrics.windowRowSpacing
+        content.translatesAutoresizingMaskIntoConstraints = false
+        content.edgeInsets = NSEdgeInsets(
+            top: OverviewMetrics.cellPadding,
+            left: OverviewMetrics.cellPadding,
+            bottom: OverviewMetrics.cellPadding,
+            right: OverviewMetrics.cellPadding
+        )
+
+        content.addArrangedSubview(OverviewTileClickStrip(action: onSelectWorkspace) {
+            OverviewLabel(
+                text: "\(workspace.number)",
+                font: .systemFont(ofSize: OverviewMetrics.headerFontSize, weight: .bold),
+                color: selected ? .controlAccentColor : .labelColor
+            )
+        })
+        content.addArrangedSubview(windowScrollView)
 
         addSubview(content)
+        let inset = OverviewMetrics.cellPadding
         NSLayoutConstraint.activate([
             content.topAnchor.constraint(equalTo: topAnchor),
             content.leadingAnchor.constraint(equalTo: leadingAnchor),
             content.trailingAnchor.constraint(equalTo: trailingAnchor),
             content.bottomAnchor.constraint(equalTo: bottomAnchor),
+
+            windowScrollView.widthAnchor.constraint(
+                equalTo: content.widthAnchor,
+                constant: -(inset * 2)
+            ),
         ])
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
+
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if !isWindowRow(hitTest(point)) {
+            onSelectWorkspace()
+            return
+        }
+        super.mouseDown(with: event)
+    }
+
+    override func layout() {
+        super.layout()
+        syncScrollViewContentWidth()
+        guard workspaceSelected else { return }
+        scrollToSelectedWindow()
+    }
+
+    private func syncScrollViewContentWidth() {
+        let width = windowScrollView.bounds.width
+        guard width > 0, let document = windowScrollView.documentView else { return }
+        guard abs(document.frame.width - width) > 0.5 else { return }
+        var frame = document.frame
+        frame.size.width = width
+        document.setFrameSize(frame.size)
+    }
+
+    private func isWindowRow(_ view: NSView?) -> Bool {
+        var node = view
+        while let current = node {
+            if current is OverviewWindowRow {
+                return true
+            }
+            node = current.superview
+        }
+        return false
+    }
+
+    private func scrollToSelectedWindow() {
+        guard selectedWindow >= 0,
+              selectedWindow < windowList.arrangedSubviews.count,
+              let documentView = windowScrollView.documentView
+        else { return }
+
+        let row = windowList.arrangedSubviews[selectedWindow]
+        var target = row.convert(row.bounds, to: documentView)
+        target = target.insetBy(dx: 0, dy: -OverviewMetrics.windowRowSpacing)
+        windowScrollView.contentView.scrollToVisible(target)
+    }
 
     private func applyStyle(selected: Bool, workspaceActive: Bool) {
         if selected {
@@ -664,6 +773,7 @@ private final class OverviewWindowRow: NSView {
         super.init(frame: .zero)
         clipsToBounds = true
         setContentHuggingPriority(.defaultHigh, for: .vertical)
+        setContentHuggingPriority(.defaultLow, for: .horizontal)
         setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         let label = OverviewLabel(
@@ -677,7 +787,7 @@ private final class OverviewWindowRow: NSView {
             label.leadingAnchor.constraint(equalTo: leadingAnchor),
             label.trailingAnchor.constraint(equalTo: trailingAnchor),
             label.bottomAnchor.constraint(equalTo: bottomAnchor),
-            heightAnchor.constraint(greaterThanOrEqualToConstant: 22),
+            heightAnchor.constraint(greaterThanOrEqualToConstant: OverviewMetrics.windowRowHeight),
         ])
     }
 
@@ -691,6 +801,17 @@ private final class OverviewWindowRow: NSView {
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: .pointingHand)
     }
+}
+
+private final class OverviewFlippedDocumentView: NSView {
+    init() {
+        super.init(frame: .zero)
+    }
+
+    override var isFlipped: Bool { true }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
 }
 
 private final class OverviewLabel: NSTextField {
