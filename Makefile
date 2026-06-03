@@ -40,7 +40,6 @@ agent-test:
 agent-build:
 	swift build --disable-sandbox --product piles -c release
 	swift build --disable-sandbox --product piles-ctl -c release
-	$(MAKE) link-ctl CTL_SOURCE="$(CURDIR)/$(BUILD_DIR)/piles-ctl"
 
 agent-check: agent-test agent-build
 

@@ -11,6 +11,6 @@ SwiftPM wraps manifest parsing and compiler subprocesses in macOS `sandbox-exec`
 - Use `make agent-build` for a release build (not `make build`).
 - `make agent-check` runs both.
 
-These Makefile targets pass `--disable-sandbox` to SwiftPM. Do not use `required_permissions: ["all"]` just to run the normal `make test` / `make build` targets.
+These Makefile targets pass `--disable-sandbox` to SwiftPM and skip `link-ctl` (the agent sandbox cannot write to `~/.local/bin`). Do not use `required_permissions: ["all"]` just to run the normal `make test` / `make build` targets.
 
 Humans working outside the agent sandbox should use `make test` and `make build` (SwiftPM sandbox stays enabled for faster, safer local builds).
