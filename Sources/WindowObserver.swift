@@ -193,7 +193,11 @@ package final class WindowObserver {
         } else if notif == kAXFocusedWindowChangedNotification || notif == kAXFocusedUIElementChangedNotification {
             WorkspaceManager.shared.followExternalFocus(pid: pidValue)
         } else if notif == kAXMovedNotification || notif == kAXResizedNotification {
-            WorkspaceManager.shared.handleWindowGeometryChange(pid: pidValue, element: element)
+            MainThread.run {
+                let handled = WorkspaceManager.shared.handleWindowGeometryChange(pid: pidValue, element: element)
+                guard !handled else { return }
+                WindowObserver.shared.trySyncWindows(pid: pidValue, attempt: 0)
+            }
         }
     }
 

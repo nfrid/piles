@@ -102,6 +102,9 @@ package final class WorkspaceManager {
         for monitor in monitors {
             let result = monitor.updateExistingWindow(window)
             if result != .missing {
+                if result == .replaced {
+                    monitor.applyReplacementEffects(for: window)
+                }
                 if result == .replaced, commit {
                     commitChanges()
                 }
@@ -231,15 +234,27 @@ package final class WorkspaceManager {
         MainThread.run { self.startExternalFocus(pid: pid) }
     }
 
-    func handleWindowGeometryChange(pid: pid_t, element: AXUIElement) {
-        MainThread.run { self.performWindowGeometryChange(pid: pid, element: element) }
+    @discardableResult
+    func handleWindowGeometryChange(pid: pid_t, element: AXUIElement) -> Bool {
+        if Thread.isMainThread {
+            return performWindowGeometryChange(pid: pid, element: element)
+        }
+        return MainThread.runSync { performWindowGeometryChange(pid: pid, element: element) }
     }
 
-    private func performWindowGeometryChange(pid: pid_t, element: AXUIElement) {
-        guard let location = locateWindow(pid: pid, element: element) else { return }
+    @discardableResult
+    private func performWindowGeometryChange(pid: pid_t, element: AXUIElement) -> Bool {
+        guard let location = locateWindow(pid: pid, element: element) else { return false }
         let monitor = monitors[location.monitorIndex]
-        guard monitor.active == location.workspaceIndex else { return }
-        monitor.scheduleCorrectiveRetile()
+        if monitor.active == location.workspaceIndex {
+            monitor.scheduleCorrectiveRetile()
+            return true
+        }
+        let window = monitor.workspaces[location.workspaceIndex][location.windowIndex]
+        if window.isTileable() {
+            window.hideOffscreen(WindowManager.screenRect(for: monitor.screen))
+        }
+        return true
     }
 
     private func startExternalFocus(pid: pid_t) {

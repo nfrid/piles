@@ -117,17 +117,24 @@ package final class Monitor {
     @discardableResult
     func addWindow(_ window: TrackedWindow, workspace: Int?, position: Int?) -> WindowUpdate {
         let existing = updateExistingWindow(window)
-        guard existing == .missing else { return existing }
-        let workspaceIndex = state.resolvedWorkspaceIndex(workspace)
-        let insertIndex = state.resolvedInsertIndex(position, in: workspaceIndex)
-        DebugLog.write("monitor \(displayID) add workspace=\(workspaceIndex) index=\(insertIndex) window=\(DebugLog.describe(window))")
-        state.insertWindow(window, workspace: workspace, position: position)
-        if workspaceIndex == state.active {
-            scheduleRetile()
-        } else {
-            window.hideOffscreen(WindowManager.screenRect(for: self.screen))
+        switch existing {
+        case .missing:
+            let workspaceIndex = state.resolvedWorkspaceIndex(workspace)
+            let insertIndex = state.resolvedInsertIndex(position, in: workspaceIndex)
+            DebugLog.write("monitor \(displayID) add workspace=\(workspaceIndex) index=\(insertIndex) window=\(DebugLog.describe(window))")
+            state.insertWindow(window, workspace: workspace, position: position)
+            if workspaceIndex == state.active {
+                scheduleRetile()
+            } else {
+                window.hideOffscreen(WindowManager.screenRect(for: self.screen))
+            }
+            return .inserted
+        case .replaced:
+            applyReplacementEffects(for: window)
+            return .replaced
+        case .unchanged, .inserted:
+            return existing
         }
-        return .inserted
     }
 
     func updateExistingWindow(_ window: TrackedWindow) -> WindowUpdate {
@@ -150,7 +157,38 @@ package final class Monitor {
             state.workspaces[ws][i] = window
             return .replaced
         }
+
+        for ws in 0..<state.workspaces.count {
+            guard let i = state.workspaces[ws].firstIndex(where: { Self.matchesFullscreenTransition(existing: $0, incoming: window) }) else {
+                continue
+            }
+            DebugLog.write("monitor \(displayID) replace fullscreen workspace=\(ws) index=\(i) old={\(DebugLog.describe(state.workspaces[ws][i]))} new={\(DebugLog.describe(window))}")
+            state.workspaces[ws][i] = window
+            return .replaced
+        }
         return .missing
+    }
+
+    func applyReplacementEffects(for window: TrackedWindow) {
+        guard let workspaceIndex = state.workspaces.firstIndex(where: { $0.contains(window) }) else { return }
+        if workspaceIndex == state.active {
+            scheduleRetile()
+        } else if window.isTileable() {
+            window.hideOffscreen(WindowManager.screenRect(for: self.screen))
+        }
+    }
+
+    private static func matchesFullscreenTransition(existing: TrackedWindow, incoming: TrackedWindow) -> Bool {
+        guard existing.pid == incoming.pid, !existing.hasElement(incoming) else { return false }
+        guard existing.isFullscreen() || incoming.isFullscreen() else { return false }
+        if existing.group == incoming.group { return true }
+        if let existingTitle = existing.title(),
+           let incomingTitle = incoming.title(),
+           existingTitle == incomingTitle,
+           !existingTitle.isEmpty {
+            return true
+        }
+        return false
     }
 
     func removeWindows(where predicate: (TrackedWindow) -> Bool) -> Bool {
@@ -161,8 +199,8 @@ package final class Monitor {
 
     func removeStaleWindows(pid: pid_t, current: [TrackedWindow]) -> Bool {
         removeWindows { window in
-            let stale = window.pid == pid && !current.contains(window)
-            guard stale else { return false }
+            guard window.pid == pid, !current.contains(window) else { return false }
+            guard !window.isTrackable() else { return false }
             DebugLog.write("monitor \(displayID) stale pid=\(pid) window=\(DebugLog.describe(window))")
             return true
         }
