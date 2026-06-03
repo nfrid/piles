@@ -39,6 +39,26 @@
       "target": "piles",
       "configuration": "release",
       "preLaunchTask": "swift: Build Release piles"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:piles}",
+      "name": "Debug piles-ctl",
+      "target": "piles-ctl",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug piles-ctl"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:piles}",
+      "name": "Release piles-ctl",
+      "target": "piles-ctl",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release piles-ctl"
     }
   ]
 }

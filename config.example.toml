@@ -13,6 +13,10 @@
 # global modifier key: "option", "control", "command"
 # modifier = "option"
 
+# unix socket for piles-ctl / Hammerspoon (default: enabled)
+# ipc_enabled = true
+# ipc_socket = "~/.config/piles/socket"
+
 # built-in action bindings
 # key names: a-z, 0-9, return, tab, space, escape, delete,
 #   comma, period, slash, backslash, minus, equal, grave,

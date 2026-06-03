@@ -198,65 +198,10 @@ package final class Hotkeys {
         switch action {
         case .passThrough:
             return Self.passThrough(event)
-        case .runCommand(let cmd):
-            DispatchQueue.global(qos: .userInitiated).async {
-                let process = Process()
-                process.executableURL = URL(fileURLWithPath: "/bin/sh")
-                process.arguments = ["-c", cmd]
-                do {
-                    try process.run()
-                } catch {
-                    fputs("piles: failed to run custom command '\(cmd)': \(error)\n", stderr)
-                }
-            }
-            return nil
-        case .switchTo(let index):
+        default:
             DispatchQueue.main.async {
-                WorkspaceManager.shared.switchTo(index)
+                ActionDispatcher.perform(action)
             }
-            return nil
-        case .moveActiveWindowAndSwitchTo(let index):
-            DispatchQueue.main.async {
-                WorkspaceManager.shared.moveActiveWindowAndSwitchTo(index)
-            }
-            return nil
-        case .focusMonitor(let offset):
-            DispatchQueue.main.async { WorkspaceManager.shared.focusMonitor(offset: offset) }
-            return nil
-        case .moveWindowToMonitor(let offset):
-            DispatchQueue.main.async { WorkspaceManager.shared.moveWindowToMonitor(offset: offset) }
-            return nil
-        case .switchToOccupied(let offset, let movingFocusedWindow):
-            DispatchQueue.main.async {
-                WorkspaceManager.shared.switchToOccupied(
-                    offset: offset,
-                    movingFocusedWindow: movingFocusedWindow
-                )
-            }
-            return nil
-        case .switchToLast:
-            DispatchQueue.main.async { WorkspaceManager.shared.switchToLast() }
-            return nil
-        case .focusNext:
-            DispatchQueue.main.async { WorkspaceManager.shared.focusNext() }
-            return nil
-        case .focusPrev:
-            DispatchQueue.main.async { WorkspaceManager.shared.focusPrev() }
-            return nil
-        case .moveFocusedWindowNext:
-            DispatchQueue.main.async { WorkspaceManager.shared.moveFocusedWindowNext() }
-            return nil
-        case .moveFocusedWindowPrev:
-            DispatchQueue.main.async { WorkspaceManager.shared.moveFocusedWindowPrev() }
-            return nil
-        case .swapMaster:
-            DispatchQueue.main.async { WorkspaceManager.shared.swapMaster() }
-            return nil
-        case .toggleLayout:
-            DispatchQueue.main.async { WorkspaceManager.shared.toggleLayout() }
-            return nil
-        case .toggleWorkspaceOverview:
-            DispatchQueue.main.async { WorkspaceOverview.shared.toggle() }
             return nil
         }
     }

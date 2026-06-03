@@ -20,6 +20,11 @@ let package = Package(
             path: "Entry"
         ),
         .executableTarget(
+            name: "piles-ctl",
+            dependencies: ["PilesCore"],
+            path: "Ctl"
+        ),
+        .executableTarget(
             name: "piles-tests",
             dependencies: ["PilesCore"],
             path: "Tests"

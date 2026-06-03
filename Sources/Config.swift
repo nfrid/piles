@@ -182,6 +182,12 @@ package struct Config {
     ]
     package var assignments: [WindowAssignment] = []
     package var bindings = BuiltinBindings()
+    package var ipcEnabled: Bool = true
+    package var ipcSocketPath: String = "~/.config/piles/socket"
+
+    package var expandedIPCSocketPath: String {
+        NSString(string: ipcSocketPath).expandingTildeInPath
+    }
 
     package fileprivate(set) var numberKeys: [UInt16: Int] = buildNumberKeys(count: 9)
 
@@ -244,6 +250,7 @@ package enum ConfigParser {
         applyMasterRatio(toml["master_ratio"], to: &config, diagnose: diagnose)
         applyDefaultLayout(toml["default_layout"], to: &config, diagnose: diagnose)
         applyModifier(toml["modifier"], to: &config, diagnose: diagnose)
+        applyIPC(toml, to: &config, diagnose: diagnose)
 
         if let bindings = toml["bindings"] as? [String: Any] {
             applyBindings(bindings, to: &config.bindings, diagnose: diagnose)
@@ -299,6 +306,19 @@ package enum ConfigParser {
         case "control": config.modifier = .maskControl
         case "command": config.modifier = .maskCommand
         default: diagnose("unknown modifier '\(modifier)', using option")
+        }
+    }
+
+    private static func applyIPC(_ toml: [String: Any], to config: inout Config, diagnose: DiagnosticSink) {
+        if let enabled = toml["ipc_enabled"] as? Bool {
+            config.ipcEnabled = enabled
+        }
+        if let path = toml["ipc_socket"] as? String {
+            if path.isEmpty {
+                diagnose("ipc_socket must not be empty")
+            } else {
+                config.ipcSocketPath = path
+            }
         }
     }
 

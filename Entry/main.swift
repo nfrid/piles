@@ -11,6 +11,7 @@ func checkAccessibility() -> Bool {
 
 func setupCrashSafety() {
     let restore = {
+        IPCServer.shared.stop()
         WorkspaceManager.shared.restoreAllWindows()
     }
 
@@ -62,6 +63,8 @@ workspace.bootstrap()
 
 let hotkeys = Hotkeys.shared
 hotkeys.start()
+
+IPCServer.shared.start()
 
 let observer = WindowObserver.shared
 observer.start()

@@ -2,14 +2,26 @@ APP_NAME = piles
 BUNDLE = $(APP_NAME).app
 INSTALL_DIR = /Applications/$(BUNDLE)
 BUILD_DIR = .build/release
+LOCAL_BIN = $(HOME)/.local/bin
+CTL_LINK = $(LOCAL_BIN)/piles-ctl
 BUNDLE_ID = com.piles.app
 CODESIGN_IDENTITY ?= -
 CODESIGN_REQUIREMENTS ?= =designated => identifier "$(BUNDLE_ID)"
 
-.PHONY: build debug test check install start clean dist benchmark
+.PHONY: build debug test check install start clean dist benchmark link-ctl
 
 build:
 	swift build --product piles -c release
+	swift build --product piles-ctl -c release
+	$(MAKE) link-ctl CTL_SOURCE="$(CURDIR)/$(BUILD_DIR)/piles-ctl"
+
+link-ctl:
+	@test -n "$(CTL_SOURCE)" || (echo "link-ctl: CTL_SOURCE not set" && exit 1)
+	@mkdir -p "$(LOCAL_BIN)"
+	@ln -sf "$(CTL_SOURCE)" "$(CTL_LINK)"
+	@echo "linked $(CTL_LINK) -> $(CTL_SOURCE)"
+	@case ":$$PATH:" in *:"$(LOCAL_BIN)":*) ;; \
+		*) echo 'add to PATH: export PATH="$(LOCAL_BIN):$$PATH"';; esac
 
 debug:
 	swift run piles
@@ -27,8 +39,9 @@ install: build
 		echo "fresh install to $(INSTALL_DIR)"; \
 		echo "grant accessibility permission in system settings, then: open /Applications/$(APP_NAME).app"; \
 	fi
-	cp $(BUILD_DIR)/$(APP_NAME) $(INSTALL_DIR)/Contents/MacOS/
+	cp $(BUILD_DIR)/$(APP_NAME) $(BUILD_DIR)/piles-ctl $(INSTALL_DIR)/Contents/MacOS/
 	codesign --force --sign "$(CODESIGN_IDENTITY)" --requirements '$(CODESIGN_REQUIREMENTS)' $(INSTALL_DIR)
+	$(MAKE) link-ctl CTL_SOURCE="$(INSTALL_DIR)/Contents/MacOS/piles-ctl"
 	@echo "updated $(INSTALL_DIR)"
 
 start: install
@@ -55,4 +68,5 @@ benchmark:
 	bash scripts/benchmark.sh run
 
 uninstall:
-	rm -rf $(INSTALL_DIR)
+	rm -rf "$(INSTALL_DIR)"
+	rm -f "$(CTL_LINK)"

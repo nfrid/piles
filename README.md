@@ -59,6 +59,8 @@ reinstall, restart the running app, and open it.
 - **custom keybindings** - configure built-in bindings, the global modifier, and
   custom shell commands
 - **config reload** - reload the config from the menubar without restarting
+- **ipc control** - `piles-ctl` sends commands over a unix socket so tools like
+  Hammerspoon can trigger actions without faking key events
 - **crash safety** - windows are brought back onscreen on quit, SIGTERM, SIGINT,
   and normal process exit
 
@@ -134,6 +136,49 @@ position = 1
 
 First matching assignment wins. `monitor`, `workspace`, and `position` are
 1-based.
+
+## IPC (`piles-ctl`)
+
+When piles is running, it listens on a unix socket (default
+`~/.config/piles/socket`). `make build`, `make install`, and `make start` symlink
+`piles-ctl` into `~/.local/bin` (add that directory to your `PATH` if needed).
+After `make install`, the symlink points at the copy inside
+`/Applications/piles.app`; after `make build` alone, it points at
+`.build/release/piles-ctl`.
+
+```bash
+piles-ctl ping
+piles-ctl workspace next
+piles-ctl workspace prev
+piles-ctl overview
+piles-ctl workspace 3
+piles-ctl workspace 3 --move
+```
+
+Commands mirror hotkey actions: `workspace last`, `focus next|prev`,
+`window move next|prev`, `layout toggle`, `master swap`,
+`monitor focus next|prev`, `monitor move next|prev`.
+
+Disable or relocate the socket in config:
+
+```toml
+ipc_enabled = true
+ipc_socket = "~/.config/piles/socket"
+```
+
+Hammerspoon example (requires `piles-ctl` on `PATH` from `make install`):
+
+```lua
+local ctl = "piles-ctl"
+hs.eventtap.new({hs.eventtap.event.types.gesture}, function(e)
+  if e:getGestureType() == "swipe" and e:getProperty(hs.eventtap.properties.gestureFingerCount) == 4 then
+    local dir = e:getProperty(hs.eventtap.properties.gestureDirection)
+    if dir == 3 then hs.execute(ctl .. " workspace prev") end
+    if dir == 4 then hs.execute(ctl .. " workspace next") end
+    if dir == 1 then hs.execute(ctl .. " overview") end
+  end
+end):start()
+```
 
 ## Development
 
