@@ -610,7 +610,8 @@ private final class GlanceWindowCell: NSView {
             font: .systemFont(ofSize: GlanceMetrics.hintFontSize, weight: selected ? .medium : .regular),
             color: selected ? .controlAccentColor : .secondaryLabelColor,
             maximumNumberOfLines: 2,
-            alignment: .center
+            alignment: .center,
+            wraps: true
         )
         iconView = GlanceIconView()
         iconWidthConstraint = iconView.widthAnchor.constraint(equalToConstant: 44)
@@ -637,11 +638,13 @@ private final class GlanceWindowCell: NSView {
         content.addArrangedSubview(caption)
 
         addSubview(content)
+        let horizontalInset: CGFloat = 10
         NSLayoutConstraint.activate([
             content.centerXAnchor.constraint(equalTo: centerXAnchor),
             content.centerYAnchor.constraint(equalTo: centerYAnchor),
-            content.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 10),
-            content.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -10),
+            content.widthAnchor.constraint(equalTo: widthAnchor, constant: -horizontalInset * 2),
+            content.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: horizontalInset),
+            content.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -horizontalInset),
             caption.widthAnchor.constraint(equalTo: content.widthAnchor),
             appLabel.widthAnchor.constraint(equalTo: caption.widthAnchor),
             titleLabel.widthAnchor.constraint(equalTo: caption.widthAnchor),
@@ -667,6 +670,7 @@ private final class GlanceWindowCell: NSView {
             weight: selected ? .medium : .regular
         )
         titleLabel.maximumNumberOfLines = type.titleLineCount
+        titleLabel.invalidateIntrinsicContentSize()
     }
 
     private func applyStyle(selected: Bool, focused: Bool) {
@@ -714,21 +718,31 @@ private final class GlanceLabel: NSTextField {
         font: NSFont,
         color: NSColor,
         maximumNumberOfLines: Int = 1,
-        alignment: NSTextAlignment = .natural
+        alignment: NSTextAlignment = .natural,
+        wraps: Bool = false
     ) {
         super.init(frame: .zero)
         stringValue = text
         self.font = font
         textColor = color
         self.alignment = alignment
-        lineBreakMode = .byTruncatingTail
         self.maximumNumberOfLines = maximumNumberOfLines
+        if wraps {
+            usesSingleLineMode = false
+            lineBreakMode = .byWordWrapping
+            cell?.wraps = true
+            cell?.isScrollable = false
+            setContentHuggingPriority(.defaultLow, for: .vertical)
+            setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+        } else {
+            lineBreakMode = .byTruncatingTail
+            setContentHuggingPriority(.required, for: .vertical)
+        }
         isEditable = false
         isSelectable = false
         isBezeled = false
         drawsBackground = false
         translatesAutoresizingMaskIntoConstraints = false
-        setContentHuggingPriority(.required, for: .vertical)
     }
 
     @available(*, unavailable)
