@@ -44,14 +44,12 @@ package final class WorkspaceManager {
         for monitor in monitors {
             monitor.retile()
         }
-        rebuildLocationIndex()
-        StatusBar.shared.update()
+        commitChanges()
     }
 
     func switchTo(_ index: Int) {
         focusedMonitor.switchTo(index)
-        rebuildLocationIndex()
-        StatusBar.shared.update()
+        commitChanges()
     }
 
     func focusWindow(workspaceIndex: Int, windowIndex: Int) {
@@ -66,8 +64,7 @@ package final class WorkspaceManager {
         }
         let window = monitor.workspaces[workspaceIndex][windowIndex]
         monitor.revealWorkspace(workspaceIndex, focusing: window)
-        rebuildLocationIndex()
-        StatusBar.shared.update()
+        commitChanges()
     }
 
     func switchToLast() {
@@ -83,29 +80,26 @@ package final class WorkspaceManager {
         } else {
             focusedMonitor.switchTo(target)
         }
-        rebuildLocationIndex()
-        StatusBar.shared.update()
+        commitChanges()
     }
 
     func moveActiveWindowTo(_ index: Int) {
         focusedMonitor.moveActiveWindowTo(index)
-        rebuildLocationIndex()
-        StatusBar.shared.update()
+        commitChanges()
     }
 
     func moveActiveWindowAndSwitchTo(_ index: Int) {
         focusedMonitor.moveActiveWindowAndSwitchTo(index)
-        rebuildLocationIndex()
-        StatusBar.shared.update()
+        commitChanges()
     }
 
     @discardableResult
-    func addWindow(_ window: TrackedWindow) -> WindowUpdate {
+    func addWindow(_ window: TrackedWindow, commit: Bool = true) -> WindowUpdate {
         for monitor in monitors {
             let result = monitor.updateExistingWindow(window)
             if result != .missing {
-                if result == .replaced {
-                    rebuildLocationIndex()
+                if result == .replaced, commit {
+                    commitChanges()
                 }
                 return result
             }
@@ -116,9 +110,8 @@ package final class WorkspaceManager {
             workspace: placement.assignment?.workspace,
             position: placement.assignment?.position
         )
-        if result == .inserted {
-            rebuildLocationIndex()
-            StatusBar.shared.update()
+        if result == .inserted, commit {
+            commitChanges()
         }
         return result
     }
@@ -133,13 +126,12 @@ package final class WorkspaceManager {
         }
 
         for window in windows {
-            let result = addWindow(window)
+            let result = addWindow(window, commit: false)
             changed = changed || result == .inserted || result == .replaced
         }
 
         if changed {
-            rebuildLocationIndex()
-            StatusBar.shared.update()
+            commitChanges()
         }
         DebugLog.write("workspace sync end pid=\(pid) changed=\(changed)")
     }
@@ -160,8 +152,7 @@ package final class WorkspaceManager {
             }
         }
         guard changed else { return }
-        rebuildLocationIndex()
-        StatusBar.shared.update()
+        commitChanges()
     }
 
     func focusNext() {
@@ -176,19 +167,17 @@ package final class WorkspaceManager {
 
     func moveFocusedWindowNext() {
         focusedMonitor.moveFocusedWindowNext()
-        rebuildLocationIndex()
-        MonocleBar.shared.update()
+        commitChanges()
     }
 
     func moveFocusedWindowPrev() {
         focusedMonitor.moveFocusedWindowPrev()
-        rebuildLocationIndex()
-        MonocleBar.shared.update()
+        commitChanges()
     }
 
     func swapMaster() {
         focusedMonitor.swapMaster()
-        rebuildLocationIndex()
+        commitChanges()
     }
 
     func canResizeMasterRatio(at point: CGPoint) -> Bool {
@@ -197,14 +186,12 @@ package final class WorkspaceManager {
 
     func resizeMasterRatio(at point: CGPoint) {
         guard focusedMonitor.resizeMasterRatio(at: point) else { return }
-        rebuildLocationIndex()
-        MonocleBar.shared.update()
+        commitChanges()
     }
 
     func toggleLayout() {
         focusedMonitor.toggleLayout()
-        rebuildLocationIndex()
-        StatusBar.shared.update()
+        commitChanges()
     }
 
     func focusMonitor(offset: Int) {
@@ -213,7 +200,7 @@ package final class WorkspaceManager {
         focusedMonitorIndex = (focusedMonitorIndex + offset + monitors.count) % monitors.count
         let target = focusedMonitor
         target.restoreFocusedWindow()
-        StatusBar.shared.update()
+        commitChanges(rebuildIndex: false)
     }
 
     func moveWindowToMonitor(offset: Int) {
@@ -233,8 +220,7 @@ package final class WorkspaceManager {
 
         focusedMonitorIndex = targetIndex
         moved.focus()
-        rebuildLocationIndex()
-        StatusBar.shared.update()
+        commitChanges()
     }
 
     func followExternalFocus(pid: pid_t) {
@@ -311,15 +297,13 @@ package final class WorkspaceManager {
                 monitor.focusedIndices[monitor.active] = location.windowIndex
             }
             monitor.rememberFocusedWindow(window)
-            rebuildLocationIndex()
-            StatusBar.shared.update()
+            commitChanges()
             return
         }
 
         focusedMonitorIndex = location.monitorIndex
         monitor.revealWorkspace(location.workspaceIndex, focusing: window)
-        rebuildLocationIndex()
-        StatusBar.shared.update()
+        commitChanges()
     }
 
     private func retryExternalFocus(pid: pid_t, attempt: Int) {
@@ -378,8 +362,7 @@ package final class WorkspaceManager {
         for monitor in monitors {
             monitor.retile()
         }
-        rebuildLocationIndex()
-        StatusBar.shared.update()
+        commitChanges()
     }
 
     package func reloadConfig() {
@@ -389,8 +372,7 @@ package final class WorkspaceManager {
             monitor.resizeWorkspaces(to: count)
             monitor.retile()
         }
-        rebuildLocationIndex()
-        StatusBar.shared.update()
+        commitChanges()
         fputs("piles: config reloaded\n", stderr)
     }
 
@@ -409,6 +391,15 @@ package final class WorkspaceManager {
                 )
             }
             .sorted { $0.screen.frame.origin.x < $1.screen.frame.origin.x }
+    }
+
+    private func commitChanges(rebuildIndex: Bool = true, refreshUI: Bool = true) {
+        if rebuildIndex {
+            rebuildLocationIndex()
+        }
+        if refreshUI {
+            StatusBar.shared.update()
+        }
     }
 
     private func rebuildLocationIndex() {
