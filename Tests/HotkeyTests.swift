@@ -62,6 +62,10 @@ enum HotkeyTests {
             resolver.resolve(keyCode: Key.l, flags: [.maskAlternate, .maskShift], config: config) == .switchToOccupied(offset: 1, movingFocusedWindow: true),
             "shifted workspace next moves focused window"
         )
+        check(
+            resolver.resolve(keyCode: Key.o, flags: [.maskAlternate], config: config) == .toggleWorkspaceOverview,
+            "default workspace overview resolves"
+        )
 
         return (passed, failed)
     }

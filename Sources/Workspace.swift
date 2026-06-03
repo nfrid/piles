@@ -54,6 +54,22 @@ package final class WorkspaceManager {
         StatusBar.shared.update()
     }
 
+    func focusWindow(workspaceIndex: Int, windowIndex: Int) {
+        let monitor = focusedMonitor
+        guard monitor.workspaces.indices.contains(workspaceIndex),
+              monitor.workspaces[workspaceIndex].indices.contains(windowIndex)
+        else {
+            if monitor.workspaces.indices.contains(workspaceIndex) {
+                switchTo(workspaceIndex)
+            }
+            return
+        }
+        let window = monitor.workspaces[workspaceIndex][windowIndex]
+        monitor.revealWorkspace(workspaceIndex, focusing: window)
+        rebuildLocationIndex()
+        StatusBar.shared.update()
+    }
+
     func switchToLast() {
         let target = focusedMonitor.previousActive
         guard target != focusedMonitor.active else { return }

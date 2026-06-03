@@ -16,6 +16,7 @@ package enum HotkeyAction: Equatable {
     case moveFocusedWindowPrev
     case swapMaster
     case toggleLayout
+    case toggleWorkspaceOverview
 }
 
 package struct HotkeyResolver {
@@ -66,6 +67,7 @@ package struct HotkeyResolver {
         if matches(keyCode, hasShift, b.movePrev) { return .moveFocusedWindowPrev }
         if matches(keyCode, hasShift, b.swapMaster) { return .swapMaster }
         if matches(keyCode, hasShift, b.toggleLayout) { return .toggleLayout }
+        if matches(keyCode, hasShift, b.workspaceOverview) { return .toggleWorkspaceOverview }
 
         return .passThrough
     }
@@ -142,6 +144,11 @@ package final class Hotkeys {
             (config.modifier != .maskCommand && flags.contains(.maskCommand)) ||
             (config.modifier != .maskControl && flags.contains(.maskControl)) ||
             (config.modifier != .maskAlternate && flags.contains(.maskAlternate))
+
+        if type == .keyDown,
+           WorkspaceOverview.shared.handleKey(keyCode: keyCode, flags: flags, config: config) {
+            return nil
+        }
 
         if type == .leftMouseUp, Hotkeys.shared.resizingMasterRatio {
             Hotkeys.shared.resizingMasterRatio = false
@@ -247,6 +254,9 @@ package final class Hotkeys {
             return nil
         case .toggleLayout:
             DispatchQueue.main.async { WorkspaceManager.shared.toggleLayout() }
+            return nil
+        case .toggleWorkspaceOverview:
+            DispatchQueue.main.async { WorkspaceOverview.shared.toggle() }
             return nil
         }
     }

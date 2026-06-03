@@ -50,6 +50,8 @@ reinstall, restart the running app, and open it.
   occupied workspaces
 - **monocle switcher** - hold option in monocle layout to show the focused
   window and its neighbors by title
+- **workspace overview** - option+o opens an 80% screen grid of workspaces and
+  window titles; h/l move by column, j/k move by row, return or m to open, esc to close
 - **app switcher follow** - command-tab to a hidden workspace window reveals the
   workspace that owns it
 - **window assignment rules** - place windows by app, bundle id, exact title, or
@@ -80,6 +82,7 @@ The default modifier is option. You can change it to `control` or `command` in
 | option+shift+comma / option+shift+period | move focused window to previous / next monitor            |
 | option+shift+return                      | run the default custom command: `open -n -a Terminal`     |
 | option+drag tile divider                 | resize the master area                                    |
+| option+o                                 | toggle workspace overview                                 |
 
 ## Config
 
