@@ -8,7 +8,7 @@ BUNDLE_ID = com.piles.app
 CODESIGN_IDENTITY ?= -
 CODESIGN_REQUIREMENTS ?= =designated => identifier "$(BUNDLE_ID)"
 
-.PHONY: build debug test check install start clean dist benchmark link-ctl
+.PHONY: build debug test check agent-test agent-build agent-check install start clean dist benchmark link-ctl
 
 build:
 	swift build --product piles -c release
@@ -31,6 +31,18 @@ test:
 	.build/debug/piles-tests
 
 check: test build
+
+# Cursor's agent sandbox blocks SwiftPM's sandbox-exec; --disable-sandbox avoids that.
+agent-test:
+	swift build --disable-sandbox --product piles-tests
+	.build/debug/piles-tests
+
+agent-build:
+	swift build --disable-sandbox --product piles -c release
+	swift build --disable-sandbox --product piles-ctl -c release
+	$(MAKE) link-ctl CTL_SOURCE="$(CURDIR)/$(BUILD_DIR)/piles-ctl"
+
+agent-check: agent-test agent-build
 
 install: build
 	@if [ ! -d "$(INSTALL_DIR)" ]; then \
