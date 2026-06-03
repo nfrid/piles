@@ -1,5 +1,6 @@
 import AppKit
 
+@dynamicMemberLookup
 package final class Monitor {
     private struct ActiveWindowSnapshot {
         let window: TrackedWindow
@@ -17,26 +18,12 @@ package final class Monitor {
     let displayID: CGDirectDisplayID
     var screen: NSScreen
     var state = MonitorState()
-    var workspaces: [[TrackedWindow]] {
-        get { state.workspaces }
-        set { state.workspaces = newValue }
+
+    subscript<T>(dynamicMember keyPath: WritableKeyPath<MonitorState, T>) -> T {
+        get { state[keyPath: keyPath] }
+        set { state[keyPath: keyPath] = newValue }
     }
-    var layouts: [Layout] {
-        get { state.layouts }
-        set { state.layouts = newValue }
-    }
-    var focusedIndices: [Int] {
-        get { state.focusedIndices }
-        set { state.focusedIndices = newValue }
-    }
-    var active: Int {
-        get { state.active }
-        set { state.active = newValue }
-    }
-    var previousActive: Int {
-        get { state.previousActive }
-        set { state.previousActive = newValue }
-    }
+
     private var retileScheduled = false
     private var geometryRetileWork: DispatchWorkItem?
     private var ignoreGeometryUntil: TimeInterval = 0
@@ -51,7 +38,7 @@ package final class Monitor {
     }
 
     func switchTo(_ index: Int) {
-        guard workspaces.indices.contains(index), index != active else { return }
+        guard state.workspaces.indices.contains(index), index != state.active else { return }
         saveFocusedIndex()
         guard let previous = state.activate(index) else { return }
 
@@ -60,9 +47,9 @@ package final class Monitor {
     }
 
     func revealWorkspace(_ index: Int, focusing focused: TrackedWindow) {
-        guard workspaces.indices.contains(index) else { return }
+        guard state.workspaces.indices.contains(index) else { return }
 
-        if index != active {
+        if index != state.active {
             saveFocusedIndex()
             guard let previous = state.activate(index) else { return }
             revealActiveWorkspace(hiding: previous)
@@ -72,13 +59,13 @@ package final class Monitor {
 
         guard rememberFocusedWindow(focused) else { return }
 
-        let target = workspaces[active][focusedIndices[active]]
+        let target = state.workspaces[state.active][state.focusedIndices[state.active]]
         focusInActiveLayout(target)
     }
 
     func moveActiveWindowTo(_ index: Int) {
-        guard workspaces.indices.contains(index) else { return }
-        guard index != active else {
+        guard state.workspaces.indices.contains(index) else { return }
+        guard index != state.active else {
             restoreFocusedWindow()
             return
         }
@@ -89,8 +76,8 @@ package final class Monitor {
     }
 
     func moveActiveWindowAndSwitchTo(_ index: Int) {
-        guard workspaces.indices.contains(index) else { return }
-        guard index != active else {
+        guard state.workspaces.indices.contains(index) else { return }
+        guard index != state.active else {
             restoreFocusedWindow()
             return
         }
@@ -103,12 +90,12 @@ package final class Monitor {
     }
 
     func nextOccupiedWorkspace(offset: Int) -> Int? {
-        guard offset != 0, workspaces.count > 1 else { return nil }
-        let count = workspaces.count
-        var index = active
+        guard offset != 0, state.workspaces.count > 1 else { return nil }
+        let count = state.workspaces.count
+        var index = state.active
         for _ in 1..<count {
             index = (index + offset + count) % count
-            if !workspaces[index].isEmpty {
+            if !state.workspaces[index].isEmpty {
                 return index
             }
         }
@@ -135,7 +122,7 @@ package final class Monitor {
         let insertIndex = state.resolvedInsertIndex(position, in: workspaceIndex)
         DebugLog.write("monitor \(displayID) add workspace=\(workspaceIndex) index=\(insertIndex) window=\(DebugLog.describe(window))")
         state.insertWindow(window, workspace: workspace, position: position)
-        if workspaceIndex == active {
+        if workspaceIndex == state.active {
             scheduleRetile()
         } else {
             window.hideOffscreen(WindowManager.screenRect(for: self.screen))
@@ -144,23 +131,23 @@ package final class Monitor {
     }
 
     func updateExistingWindow(_ window: TrackedWindow) -> WindowUpdate {
-        for ws in 0..<workspaces.count {
-            guard let i = workspaces[ws].firstIndex(of: window) else { continue }
-            let current = workspaces[ws][i]
+        for ws in 0..<state.workspaces.count {
+            guard let i = state.workspaces[ws].firstIndex(of: window) else { continue }
+            let current = state.workspaces[ws][i]
             if current.group != window.group || !current.hasSameMembers(window) {
                 DebugLog.write("monitor \(displayID) replace workspace=\(ws) index=\(i) old={\(DebugLog.describe(current))} new={\(DebugLog.describe(window))}")
-                workspaces[ws][i] = window
+                state.workspaces[ws][i] = window
                 return .replaced
             }
             return .unchanged
         }
 
-        for ws in 0..<workspaces.count {
-            guard let i = workspaces[ws].firstIndex(where: { $0.group == window.group && !$0.isTileable() }) else {
+        for ws in 0..<state.workspaces.count {
+            guard let i = state.workspaces[ws].firstIndex(where: { $0.group == window.group && !$0.isTileable() }) else {
                 continue
             }
-            DebugLog.write("monitor \(displayID) replace untileable workspace=\(ws) index=\(i) old={\(DebugLog.describe(workspaces[ws][i]))} new={\(DebugLog.describe(window))}")
-            workspaces[ws][i] = window
+            DebugLog.write("monitor \(displayID) replace untileable workspace=\(ws) index=\(i) old={\(DebugLog.describe(state.workspaces[ws][i]))} new={\(DebugLog.describe(window))}")
+            state.workspaces[ws][i] = window
             return .replaced
         }
         return .missing
@@ -183,7 +170,7 @@ package final class Monitor {
     }
 
     func containsWindow(_ window: TrackedWindow) -> Bool {
-        workspaces.contains { $0.contains(window) }
+        state.workspaces.contains { $0.contains(window) }
     }
 
     func focusNext() { focusOffset(1) }
@@ -193,7 +180,7 @@ package final class Monitor {
 
     private func focusOffset(_ offset: Int) {
         guard !activeWorkspaceIsFullscreen else { return }
-        let windows = workspaces[active]
+        let windows = state.workspaces[state.active]
         guard windows.count > 1,
               let focused = WindowManager.focusedWindow(),
               let i = windows.firstIndex(of: focused)
@@ -201,12 +188,12 @@ package final class Monitor {
         let targetIndex = (i + offset + windows.count) % windows.count
         let target = windows[targetIndex]
         focusInActiveLayout(target)
-        focusedIndices[active] = targetIndex
+        state.focusedIndices[state.active] = targetIndex
     }
 
     private func moveFocusedWindow(offset: Int) {
         guard !activeWorkspaceIsFullscreen else { return }
-        let windows = workspaces[active]
+        let windows = state.workspaces[state.active]
         guard windows.count > 1,
               let focused = WindowManager.focusedWindow(),
               let i = windows.firstIndex(of: focused)
@@ -214,30 +201,30 @@ package final class Monitor {
 
         let moved = WorkspaceWindows.moving(windows, from: i, offset: offset)
         let targetIndex = moved.movedIndex
-        workspaces[active] = moved.items
-        focusedIndices[active] = targetIndex
+        state.workspaces[state.active] = moved.items
+        state.focusedIndices[state.active] = targetIndex
         retile()
-        workspaces[active][targetIndex].focus()
+        state.workspaces[state.active][targetIndex].focus()
     }
 
     func swapMaster() {
         guard !activeWorkspaceIsFullscreen else { return }
-        guard workspaces[active].count > 1 else { return }
+        guard state.workspaces[state.active].count > 1 else { return }
         guard let focused = WindowManager.focusedWindow(),
-              let i = workspaces[active].firstIndex(of: focused),
+              let i = state.workspaces[state.active].firstIndex(of: focused),
               i != 0
         else { return }
-        workspaces[active].swapAt(0, i)
+        state.workspaces[state.active].swapAt(0, i)
         retile()
-        workspaces[active][0].focus()
+        state.workspaces[state.active][0].focus()
     }
 
     func toggleLayout() {
-        layouts[active] = layouts[active] == .tile ? .monocle : .tile
+        state.layouts[state.active] = state.layouts[state.active] == .tile ? .monocle : .tile
         retile()
-        if layouts[active] == .monocle,
+        if state.layouts[state.active] == .monocle,
            let focused = WindowManager.focusedWindow(),
-           workspaces[active].contains(focused) {
+           state.workspaces[state.active].contains(focused) {
             focusInActiveLayout(focused)
         }
     }
@@ -256,10 +243,10 @@ package final class Monitor {
         guard now >= ignoreGeometryUntil else { return }
 
         geometryRetileWork?.cancel()
-        let scheduledActive = active
+        let scheduledActive = state.active
         let work = DispatchWorkItem { [self] in
             geometryRetileWork = nil
-            guard active == scheduledActive else { return }
+            guard state.active == scheduledActive else { return }
             guard ProcessInfo.processInfo.systemUptime >= ignoreGeometryUntil else { return }
             guard !activeWorkspaceMatchesLayout(tolerance: Self.frameTolerance) else { return }
             retile()
@@ -284,10 +271,10 @@ package final class Monitor {
     private func cleanActiveWorkspace() -> [ActiveWindowSnapshot] {
         var windows: [TrackedWindow] = []
         var snapshots: [ActiveWindowSnapshot] = []
-        windows.reserveCapacity(workspaces[active].count)
-        snapshots.reserveCapacity(workspaces[active].count)
+        windows.reserveCapacity(state.workspaces[state.active].count)
+        snapshots.reserveCapacity(state.workspaces[state.active].count)
 
-        for window in workspaces[active] {
+        for window in state.workspaces[state.active] {
             guard let attributes = window.attributes(),
                   attributes.isTrackable,
                   !windows.contains(window)
@@ -295,7 +282,7 @@ package final class Monitor {
             windows.append(window)
             snapshots.append(ActiveWindowSnapshot(window: window, attributes: attributes))
         }
-        workspaces[active] = windows
+        state.workspaces[state.active] = windows
         return snapshots
     }
 
@@ -322,7 +309,7 @@ package final class Monitor {
         let frames = Tiler.calculateFrames(
             count: windows.count,
             screen: screen,
-            layout: layouts[active],
+            layout: state.layouts[state.active],
             settings: LayoutSettings(masterRatio: Config.shared.masterRatio)
         )
         return (windows, frames, screen)
@@ -333,7 +320,7 @@ package final class Monitor {
     }
 
     private var activeFullscreenIndex: Int? {
-        workspaces[active].firstIndex { $0.isFullscreen() }
+        state.workspaces[state.active].firstIndex { $0.isFullscreen() }
     }
 
     private func framesMatch(_ lhs: CGRect, _ rhs: CGRect, tolerance: CGFloat) -> Bool {
@@ -357,7 +344,7 @@ package final class Monitor {
 
     private func masterRatioFor(point: CGPoint, requireDividerHit: Bool) -> CGFloat? {
         guard !activeWorkspaceIsFullscreen,
-              layouts[active] == .tile,
+              state.layouts[state.active] == .tile,
               activeTileableWindowCount > 1
         else { return nil }
 
@@ -375,7 +362,7 @@ package final class Monitor {
 
     private var activeTileableWindowCount: Int {
         var count = 0
-        for window in workspaces[active] where window.isTileable() {
+        for window in state.workspaces[state.active] where window.isTileable() {
             count += 1
             if count > 1 { return count }
         }
@@ -413,39 +400,39 @@ package final class Monitor {
     private func revealActiveWorkspace(hiding previous: Int) {
         retile()
         let screen = WindowManager.screenRect(for: self.screen)
-        for win in workspaces[previous] {
+        for win in state.workspaces[previous] {
             win.hideOffscreen(screen)
         }
     }
 
     private func focusInActiveLayout(_ window: TrackedWindow) {
         window.focus()
-        if layouts[active] == .monocle {
+        if state.layouts[state.active] == .monocle {
             window.raise()
         }
     }
 
     private func moveActiveFocusedWindow(to workspaceIndex: Int) -> TrackedWindow? {
-        guard workspaces.indices.contains(workspaceIndex) else { return nil }
+        guard state.workspaces.indices.contains(workspaceIndex) else { return nil }
         guard let focused = WindowManager.focusedWindow(),
               let removed = state.moveActiveWindow(matching: focused, to: workspaceIndex)
         else { return nil }
         let moved = focused.keepingMembers(from: removed)
-        workspaces[workspaceIndex][0] = moved
+        state.workspaces[workspaceIndex][0] = moved
         return moved
     }
 
     func restoreFocusedWindow() {
-        let windows = workspaces[active]
+        let windows = state.workspaces[state.active]
         guard !windows.isEmpty else { return }
-        let idx = activeFullscreenIndex ?? clampedFocus(in: active)
+        let idx = activeFullscreenIndex ?? clampedFocus(in: state.active)
         let target = windows[idx]
         focusInActiveLayout(target)
     }
 
     func restoreAllWindows() {
         let screen = WindowManager.screenFrame(for: self.screen)
-        for ws in workspaces {
+        for ws in state.workspaces {
             for win in ws {
                 guard !win.isFullscreen() else { continue }
                 guard let frame = win.getFrame() else { continue }

@@ -6,6 +6,9 @@ let (p1, f1) = TilerTests.runAll()
 fputs("running window group tests...\n", stderr)
 let (p3, f3) = WindowGroupTests.runAll()
 
+fputs("running monitor state tests...\n", stderr)
+let (p7, f7) = MonitorStateTests.runAll()
+
 fputs("running config tests...\n", stderr)
 let (p4, f4) = ConfigTests.runAll()
 
@@ -18,8 +21,8 @@ let (p6, f6) = IPCCommandTests.runAll()
 fputs("running performance tests...\n", stderr)
 let (p2, f2) = TilerPerformanceTests.runAll()
 
-let passed = p1 + p2 + p3 + p4 + p5 + p6
-let failed = f1 + f2 + f3 + f4 + f5 + f6
+let passed = p1 + p2 + p3 + p4 + p5 + p6 + p7
+let failed = f1 + f2 + f3 + f4 + f5 + f6 + f7
 
 fputs("\n\(passed) passed, \(failed) failed\n", stderr)
 
