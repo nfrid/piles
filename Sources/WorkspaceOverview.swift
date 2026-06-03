@@ -560,6 +560,7 @@ private final class OverviewWorkspaceCell: NSView {
         let content = NSStackView()
         content.orientation = .vertical
         content.alignment = .leading
+        content.distribution = .fill
         content.spacing = 4
         content.translatesAutoresizingMaskIntoConstraints = false
         content.edgeInsets = NSEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
@@ -661,7 +662,9 @@ private final class OverviewWindowRow: NSView {
     init(title: String, selected: Bool, action: @escaping () -> Void) {
         self.action = action
         super.init(frame: .zero)
+        clipsToBounds = true
         setContentHuggingPriority(.defaultHigh, for: .vertical)
+        setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         let label = OverviewLabel(
             text: title,
@@ -703,6 +706,12 @@ private final class OverviewLabel: NSTextField {
         isBezeled = false
         drawsBackground = false
         translatesAutoresizingMaskIntoConstraints = false
+        setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        setContentHuggingPriority(.defaultLow, for: .horizontal)
+        cell?.wraps = false
+        cell?.usesSingleLineMode = true
+        cell?.lineBreakMode = .byTruncatingTail
+        cell?.truncatesLastVisibleLine = true
     }
 
     @available(*, unavailable)
