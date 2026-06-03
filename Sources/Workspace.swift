@@ -87,6 +87,11 @@ package final class WorkspaceManager {
         commitChanges()
     }
 
+    func moveActiveWindowTo(_ index: Int) {
+        focusedMonitor.moveActiveWindowTo(index)
+        commitChanges()
+    }
+
     func moveActiveWindowAndSwitchTo(_ index: Int) {
         focusedMonitor.moveActiveWindowAndSwitchTo(index)
         commitChanges()

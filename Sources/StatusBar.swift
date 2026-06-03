@@ -187,7 +187,7 @@ private final class BadgeView: NSView {
             return
         }
         if event.modifierFlags.contains(.shift) {
-            WorkspaceManager.shared.moveActiveWindowAndSwitchTo(workspaceIndex)
+            WorkspaceManager.shared.moveActiveWindowTo(workspaceIndex)
         } else {
             WorkspaceManager.shared.switchTo(workspaceIndex)
         }

@@ -93,7 +93,7 @@ package enum IPCCommandParser {
             }
             let index = number - 1
             if moveWindow {
-                return .success(.moveActiveWindowAndSwitchTo(index))
+                return .success(.moveActiveWindowTo(index))
             }
             return .success(.switchTo(index))
         }

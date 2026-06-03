@@ -18,8 +18,8 @@ package enum ActionDispatcher {
             }
         case .switchTo(let index):
             MainThread.run { WorkspaceManager.shared.switchTo(index) }
-        case .moveActiveWindowAndSwitchTo(let index):
-            MainThread.run { WorkspaceManager.shared.moveActiveWindowAndSwitchTo(index) }
+        case .moveActiveWindowTo(let index):
+            MainThread.run { WorkspaceManager.shared.moveActiveWindowTo(index) }
         case .focusMonitor(let offset):
             MainThread.run { WorkspaceManager.shared.focusMonitor(offset: offset) }
         case .moveWindowToMonitor(let offset):

@@ -5,7 +5,7 @@ package enum HotkeyAction: Equatable {
     case passThrough
     case runCommand(String)
     case switchTo(Int)
-    case moveActiveWindowAndSwitchTo(Int)
+    case moveActiveWindowTo(Int)
     case focusMonitor(Int)
     case moveWindowToMonitor(Int)
     case switchToOccupied(offset: Int, movingFocusedWindow: Bool)
@@ -40,7 +40,7 @@ package struct HotkeyResolver {
 
         if let number = config.numberKeys[keyCode] {
             let index = number - 1
-            return hasShift ? .moveActiveWindowAndSwitchTo(index) : .switchTo(index)
+            return hasShift ? .moveActiveWindowTo(index) : .switchTo(index)
         }
 
         let b = config.bindings

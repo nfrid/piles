@@ -31,8 +31,8 @@ enum HotkeyTests {
             "number key switches workspace"
         )
         check(
-            resolver.resolve(keyCode: Key.two, flags: [.maskAlternate, .maskShift], config: config) == .moveActiveWindowAndSwitchTo(1),
-            "shifted number key moves window and switches workspace"
+            resolver.resolve(keyCode: Key.two, flags: [.maskAlternate, .maskShift], config: config) == .moveActiveWindowTo(1),
+            "shifted number key moves window to workspace"
         )
         check(
             resolver.resolve(keyCode: Key.j, flags: [.maskAlternate, .maskCommand], config: config) == .passThrough,

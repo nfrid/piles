@@ -42,8 +42,9 @@ reinstall, restart the running app, and open it.
   the stack, and swap the focused window into master
 - **workspace navigation** - jump directly by number, jump to the previous/next
   occupied workspace, or jump back to the last workspace
-- **move windows around** - move the focused window to a numbered workspace, to
-  the previous/next occupied workspace, or to another monitor
+- **move windows around** - move the focused window to a numbered workspace
+  without leaving your current workspace, move to the previous/next occupied
+  workspace and follow it, or move to another monitor
 - **multi-monitor** - each display has its own workspace set; the menubar shows
   the focused monitor when more than one is connected
 - **menubar indicator** - compact badge widgets show the active workspace and
@@ -75,9 +76,9 @@ The default modifier is option. You can change it to `control` or `command` in
 | Keys                                     | Action                                                    |
 | ---------------------------------------- | --------------------------------------------------------- |
 | option+1-9                               | switch to workspace                                       |
-| option+shift+1-9                         | move focused window to workspace and follow it            |
+| option+shift+1-9                         | move focused window to workspace (stay on current)        |
 | option+h / option+l                      | switch to previous / next occupied workspace              |
-| option+shift+h / option+shift+l          | move focused window to previous / next occupied workspace |
+| option+shift+h / option+shift+l          | move focused window to previous / next occupied workspace and follow it     |
 | option+tab                               | switch to last workspace                                  |
 | option+j / option+k                      | focus next / previous window                              |
 | option+shift+j / option+shift+k          | move focused window next / previous                       |

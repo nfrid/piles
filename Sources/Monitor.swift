@@ -271,6 +271,18 @@ package final class Monitor {
         focusInActiveLayout(target)
     }
 
+    func moveActiveWindowTo(_ index: Int) {
+        guard workspaces.indices.contains(index) else { return }
+        guard index != active else {
+            restoreFocusedWindow()
+            return
+        }
+        guard let moved = moveActiveFocusedWindow(to: index) else { return }
+        moved.hideOffscreen(WindowManager.screenRect(for: self.screen))
+        retile()
+        restoreFocusedWindow()
+    }
+
     func moveActiveWindowAndSwitchTo(_ index: Int) {
         guard workspaces.indices.contains(index) else { return }
         guard index != active else {
