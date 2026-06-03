@@ -1,11 +1,8 @@
 import AppKit
 
 private enum OverviewMetrics {
-    static let screenFraction: CGFloat = 0.8
-    static let gridColumns = 3
     static let headerFontSize: CGFloat = 17
     static let bodyFontSize: CGFloat = 15
-    static let hintFontSize: CGFloat = 12
     static let cellPadding: CGFloat = 8
     static let windowRowHeight: CGFloat = 28
     static let windowIconSize: CGFloat = 18
@@ -15,8 +12,7 @@ private enum OverviewMetrics {
 
 package final class WorkspaceOverview {
     package static let shared = WorkspaceOverview()
-    private let animationDuration: TimeInterval = 0.14
-    private var panel: NSPanel?
+    private let panelController = OverlayPanelController()
     package private(set) var isVisible = false
     private var selectedWorkspace = 0
     private var selectedWindow = 0
@@ -42,22 +38,7 @@ package final class WorkspaceOverview {
     package func hide() {
         guard isVisible else { return }
         isVisible = false
-        guard let panel, panel.isVisible else {
-            self.panel = nil
-            return
-        }
-
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = animationDuration
-            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
-            panel.animator().alphaValue = 0
-        } completionHandler: {
-            panel.orderOut(nil)
-            panel.alphaValue = 1
-            if !self.isVisible {
-                self.panel = nil
-            }
-        }
+        panelController.dismiss { !self.isVisible }
     }
 
     package func refreshIfVisible() {
@@ -73,50 +54,10 @@ package final class WorkspaceOverview {
     package func handleKey(keyCode: UInt16, flags: CGEventFlags, config: Config) -> Bool {
         guard isVisible else { return false }
 
-        if keyCode == Key.escape {
-            DispatchQueue.main.async { self.hide() }
-            return true
-        }
-
-        if flags.contains(.maskCommand) {
-            return false
-        }
-
-        if let number = config.numberKeys[keyCode] {
-            let index = number - 1
-            DispatchQueue.main.async {
-                self.activate(workspaceIndex: index, windowIndex: nil)
-                self.hide()
-            }
-            return true
-        }
-
-        let binding = config.bindings.workspaceOverview
-        let hasShift = flags.contains(.maskShift)
-        if config.matchesConfiguredModifier(flags),
-           keyCode == binding.key,
-           hasShift == binding.shift {
-            DispatchQueue.main.async { self.hide() }
-            return true
-        }
-
-        switch keyCode {
-        case Key.h:
-            DispatchQueue.main.async { self.moveWorkspaceHorizontal(-1) }
-            return true
-        case Key.l:
-            DispatchQueue.main.async { self.moveWorkspaceHorizontal(1) }
-            return true
-        case Key.j:
-            DispatchQueue.main.async { self.moveWorkspaceRow(1) }
-            return true
-        case Key.k:
-            DispatchQueue.main.async { self.moveWorkspaceRow(-1) }
-            return true
-        case Key.return, Key.m:
-            DispatchQueue.main.async { self.confirmSelection() }
-            return true
-        case Key.o:
+        if keyCode == Key.o,
+           !flags.contains(.maskShift),
+           !flags.contains(.maskCommand),
+           !config.matchesConfiguredModifier(flags) {
             DispatchQueue.main.async {
                 WorkspaceGlance.shared.show(
                     workspaceIndex: self.selectedWorkspace,
@@ -124,7 +65,35 @@ package final class WorkspaceOverview {
                 )
             }
             return true
-        default:
+        }
+
+        switch OverlayKeyInput.resolve(
+            keyCode: keyCode,
+            flags: flags,
+            config: config,
+            toggleBinding: config.bindings.workspaceOverview
+        ) {
+        case .passThrough:
+            return false
+        case .dismiss:
+            DispatchQueue.main.async { self.hide() }
+            return true
+        case .navigateHorizontal(let delta):
+            DispatchQueue.main.async { self.moveWorkspaceHorizontal(delta) }
+            return true
+        case .navigateVertical(let delta):
+            DispatchQueue.main.async { self.moveWorkspaceRow(delta) }
+            return true
+        case .confirm:
+            DispatchQueue.main.async { self.confirmSelection() }
+            return true
+        case .numberJump(let index):
+            DispatchQueue.main.async {
+                self.activate(workspaceIndex: index, windowIndex: nil)
+                self.hide()
+            }
+            return true
+        case .unrecognized:
             return true
         }
     }
@@ -150,16 +119,14 @@ package final class WorkspaceOverview {
     private func moveWorkspaceHorizontal(_ delta: Int) {
         guard let state = OverviewState.capture() else { return }
         let count = state.workspaces.count
-        let columns = OverviewMetrics.gridColumns
-        guard count > 0 else { return }
+        guard let next = OverlayGridNavigation.moveHorizontal(
+            selected: selectedWorkspace,
+            delta: delta,
+            count: count,
+            columns: OverlayMetrics.gridColumns
+        ) else { return }
 
-        let row = selectedWorkspace / columns
-        let rowStart = row * columns
-        let slots = min(columns, count - rowStart)
-        guard slots > 0 else { return }
-
-        let column = selectedWorkspace - rowStart
-        selectedWorkspace = rowStart + (column + delta + slots) % slots
+        selectedWorkspace = next
         syncWindowSelection(from: state)
         present(state: state, animated: false)
     }
@@ -167,9 +134,14 @@ package final class WorkspaceOverview {
     private func moveWorkspaceRow(_ delta: Int) {
         guard let state = OverviewState.capture() else { return }
         let count = state.workspaces.count
-        guard count > 0 else { return }
-        let step = delta * OverviewMetrics.gridColumns
-        selectedWorkspace = (selectedWorkspace + step + count) % count
+        guard let next = OverlayGridNavigation.moveRow(
+            selected: selectedWorkspace,
+            delta: delta,
+            count: count,
+            columns: OverlayMetrics.gridColumns
+        ) else { return }
+
+        selectedWorkspace = next
         syncWindowSelection(from: state)
         present(state: state, animated: false)
     }
@@ -193,62 +165,26 @@ package final class WorkspaceOverview {
     }
 
     private func present(state: OverviewState, animated: Bool = true) {
-        let panel = panel(for: state.screen)
         let selection = OverviewSelection(workspace: selectedWorkspace, window: selectedWindow)
-        panel.contentView = OverviewRootView(
-            state: state,
-            selection: selection,
-            onSelectWorkspace: { [weak self] index in
-                self?.activate(workspaceIndex: index, windowIndex: nil)
-                self?.hide()
-            },
-            onSelectWindow: { [weak self] workspaceIndex, windowIndex in
-                self?.activate(workspaceIndex: workspaceIndex, windowIndex: windowIndex)
-                self?.hide()
-            },
+        let contentView = OverlayRootView(
+            screen: state.screen,
+            card: OverviewCardView(
+                overviewState: state,
+                selection: selection,
+                onSelectWorkspace: { [weak self] index in
+                    self?.activate(workspaceIndex: index, windowIndex: nil)
+                    self?.hide()
+                },
+                onSelectWindow: { [weak self] workspaceIndex, windowIndex in
+                    self?.activate(workspaceIndex: workspaceIndex, windowIndex: windowIndex)
+                    self?.hide()
+                }
+            ),
             onDismiss: { [weak self] in
                 self?.hide()
             }
         )
-        panel.setFrame(state.screen.frame, display: true)
-
-        if !panel.isVisible {
-            panel.alphaValue = 0
-            panel.orderFrontRegardless()
-        }
-
-        guard animated else {
-            panel.alphaValue = 1
-            return
-        }
-
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = animationDuration
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            panel.animator().alphaValue = 1
-        }
-    }
-
-    private func panel(for screen: NSScreen) -> NSPanel {
-        if let panel {
-            return panel
-        }
-
-        let panel = NSPanel(
-            contentRect: screen.frame,
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = false
-        panel.hidesOnDeactivate = false
-        panel.ignoresMouseEvents = false
-        panel.level = .modalPanel
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        self.panel = panel
-        return panel
+        panelController.present(contentView: contentView, on: state.screen, animated: animated)
     }
 }
 
@@ -321,106 +257,6 @@ private struct OverviewWindow {
     let focused: Bool
 }
 
-private final class OverviewRootView: NSView {
-    private let onDismiss: () -> Void
-    private weak var cardView: OverviewCardView?
-
-    init(
-        state: OverviewState,
-        selection: OverviewSelection,
-        onSelectWorkspace: @escaping (Int) -> Void,
-        onSelectWindow: @escaping (Int, Int) -> Void,
-        onDismiss: @escaping () -> Void
-    ) {
-        self.onDismiss = onDismiss
-        super.init(frame: .zero)
-
-        let backdrop = OverviewBackdropView(onDismiss: onDismiss)
-        backdrop.translatesAutoresizingMaskIntoConstraints = false
-
-        let effect = OverviewDimmingView()
-        effect.translatesAutoresizingMaskIntoConstraints = false
-
-        let card = OverviewCardView(
-            overviewState: state,
-            selection: selection,
-            onSelectWorkspace: onSelectWorkspace,
-            onSelectWindow: onSelectWindow
-        )
-        card.translatesAutoresizingMaskIntoConstraints = false
-        cardView = card
-
-        addSubview(backdrop)
-        addSubview(effect)
-        addSubview(card)
-
-        let visible = state.screen.visibleFrame
-        let cardWidth = visible.width * OverviewMetrics.screenFraction
-        let cardHeight = visible.height * OverviewMetrics.screenFraction
-
-        NSLayoutConstraint.activate([
-            backdrop.topAnchor.constraint(equalTo: topAnchor),
-            backdrop.leadingAnchor.constraint(equalTo: leadingAnchor),
-            backdrop.trailingAnchor.constraint(equalTo: trailingAnchor),
-            backdrop.bottomAnchor.constraint(equalTo: bottomAnchor),
-
-            effect.topAnchor.constraint(equalTo: topAnchor),
-            effect.leadingAnchor.constraint(equalTo: leadingAnchor),
-            effect.trailingAnchor.constraint(equalTo: trailingAnchor),
-            effect.bottomAnchor.constraint(equalTo: bottomAnchor),
-
-            card.centerXAnchor.constraint(equalTo: centerXAnchor),
-            card.centerYAnchor.constraint(equalTo: centerYAnchor),
-            card.widthAnchor.constraint(equalToConstant: cardWidth),
-            card.heightAnchor.constraint(equalToConstant: cardHeight),
-        ])
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
-
-    override func mouseDown(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        if cardView?.frame.contains(point) != true {
-            onDismiss()
-        }
-    }
-}
-
-private final class OverviewDimmingView: NSVisualEffectView {
-    init() {
-        super.init(frame: .zero)
-        material = .hudWindow
-        blendingMode = .behindWindow
-        state = .active
-        wantsLayer = true
-        layer?.backgroundColor = NSColor.black.withAlphaComponent(0.35).cgColor
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
-
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        nil
-    }
-}
-
-private final class OverviewBackdropView: NSView {
-    private let onDismiss: () -> Void
-
-    init(onDismiss: @escaping () -> Void) {
-        self.onDismiss = onDismiss
-        super.init(frame: .zero)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
-
-    override func mouseDown(with event: NSEvent) {
-        onDismiss()
-    }
-}
-
 private final class OverviewCardView: NSVisualEffectView {
     init(
         overviewState: OverviewState,
@@ -433,21 +269,24 @@ private final class OverviewCardView: NSVisualEffectView {
         blendingMode = .withinWindow
         self.state = .active
         wantsLayer = true
-        layer?.cornerRadius = 12
+        layer?.cornerRadius = OverlayMetrics.cardCornerRadius
         layer?.masksToBounds = true
 
         let hint = NSTextField(labelWithString: "h/l column · j/k row · return/m open · o glance · 1–9 jump · esc close")
-        hint.font = .systemFont(ofSize: OverviewMetrics.hintFontSize, weight: .medium)
+        hint.font = .systemFont(ofSize: OverlayMetrics.hintFontSize, weight: .medium)
         hint.textColor = .tertiaryLabelColor
 
-        let grid = OverviewTileGridView(
-            workspaces: overviewState.workspaces,
-            selection: selection,
-            onSelectWorkspace: onSelectWorkspace,
-            onSelectWindow: onSelectWindow
-        )
+        let grid = OverlayGridView(cells: overviewState.workspaces.map { workspace in
+            OverviewWorkspaceCell(
+                workspace: workspace,
+                selected: workspace.index == selection.workspace,
+                selectedWindow: selection.window,
+                onSelectWorkspace: { onSelectWorkspace(workspace.index) },
+                onSelectWindow: { onSelectWindow(workspace.index, $0) }
+            )
+        })
 
-        let padding: CGFloat = 16
+        let padding = OverlayMetrics.cardPadding
         let header = NSStackView()
         header.orientation = .vertical
         header.alignment = .leading
@@ -455,7 +294,7 @@ private final class OverviewCardView: NSVisualEffectView {
         header.translatesAutoresizingMaskIntoConstraints = false
         if let monitorLabel = overviewState.monitorLabel {
             let label = NSTextField(labelWithString: monitorLabel)
-            label.font = .systemFont(ofSize: OverviewMetrics.hintFontSize, weight: .semibold)
+            label.font = .systemFont(ofSize: OverlayMetrics.hintFontSize, weight: .semibold)
             label.textColor = .secondaryLabelColor
             header.addArrangedSubview(label)
         }
@@ -477,68 +316,6 @@ private final class OverviewCardView: NSVisualEffectView {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
-}
-
-/// Fixed-size tile grid: every workspace cell gets the same width and height.
-private final class OverviewTileGridView: NSView {
-    private let columns = OverviewMetrics.gridColumns
-    private let spacing: CGFloat = 10
-    private var tiles: [OverviewWorkspaceCell] = []
-
-    init(
-        workspaces: [OverviewWorkspace],
-        selection: OverviewSelection,
-        onSelectWorkspace: @escaping (Int) -> Void,
-        onSelectWindow: @escaping (Int, Int) -> Void
-    ) {
-        super.init(frame: .zero)
-        translatesAutoresizingMaskIntoConstraints = false
-        setContentHuggingPriority(.defaultLow, for: .horizontal)
-        setContentHuggingPriority(.defaultLow, for: .vertical)
-        setContentCompressionResistancePriority(.defaultLow, for: .vertical)
-
-        for workspace in workspaces {
-            let cell = OverviewWorkspaceCell(
-                workspace: workspace,
-                selected: workspace.index == selection.workspace,
-                selectedWindow: selection.window,
-                onSelectWorkspace: { onSelectWorkspace(workspace.index) },
-                onSelectWindow: { onSelectWindow(workspace.index, $0) }
-            )
-            tiles.append(cell)
-            addSubview(cell)
-        }
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
-
-    override var isFlipped: Bool { true }
-
-    override func layout() {
-        super.layout()
-        guard !tiles.isEmpty else { return }
-
-        let count = tiles.count
-        let rowCount = (count + columns - 1) / columns
-        let width = bounds.width
-        let height = bounds.height
-        guard width > 0, height > 0, rowCount > 0 else { return }
-
-        let cellWidth = (width - spacing * CGFloat(columns - 1)) / CGFloat(columns)
-        let cellHeight = (height - spacing * CGFloat(rowCount - 1)) / CGFloat(rowCount)
-
-        for (index, tile) in tiles.enumerated() {
-            let row = index / columns
-            let column = index % columns
-            tile.frame = CGRect(
-                x: CGFloat(column) * (cellWidth + spacing),
-                y: CGFloat(row) * (cellHeight + spacing),
-                width: cellWidth,
-                height: cellHeight
-            )
-        }
-    }
 }
 
 private final class OverviewWorkspaceCell: NSView {
@@ -579,10 +356,10 @@ private final class OverviewWorkspaceCell: NSView {
 
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.cornerRadius = 8
-        applyStyle(selected: selected, workspaceActive: workspace.active)
+        layer?.cornerRadius = OverlayMetrics.cellCornerRadius
+        SelectionCellStyle.apply(to: layer, selected: selected, focused: workspace.active)
 
-        let document = OverviewFlippedDocumentView()
+        let document = OverlayFlippedDocumentView()
         document.translatesAutoresizingMaskIntoConstraints = false
         document.addSubview(windowList)
         windowScrollView.documentView = document
@@ -605,8 +382,8 @@ private final class OverviewWorkspaceCell: NSView {
         ])
 
         if workspace.windows.isEmpty {
-            windowList.addArrangedSubview(OverviewTileClickStrip(action: onSelectWorkspace) {
-                OverviewLabel(
+            windowList.addArrangedSubview(OverlayClickStrip(action: onSelectWorkspace) {
+                OverlayLabel(
                     text: "empty",
                     font: .systemFont(ofSize: OverviewMetrics.bodyFontSize, weight: .medium),
                     color: .tertiaryLabelColor
@@ -639,8 +416,8 @@ private final class OverviewWorkspaceCell: NSView {
             right: OverviewMetrics.cellPadding
         )
 
-        content.addArrangedSubview(OverviewTileClickStrip(action: onSelectWorkspace) {
-            OverviewLabel(
+        content.addArrangedSubview(OverlayClickStrip(action: onSelectWorkspace) {
+            OverlayLabel(
                 text: "\(workspace.number)",
                 font: .systemFont(ofSize: OverviewMetrics.headerFontSize, weight: .bold),
                 color: selected ? .controlAccentColor : .labelColor
@@ -713,53 +490,6 @@ private final class OverviewWorkspaceCell: NSView {
         target = target.insetBy(dx: 0, dy: -OverviewMetrics.windowRowSpacing)
         windowScrollView.contentView.scrollToVisible(target)
     }
-
-    private func applyStyle(selected: Bool, workspaceActive: Bool) {
-        if selected {
-            layer?.borderWidth = 2
-            layer?.borderColor = NSColor.controlAccentColor.cgColor
-            layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.18).cgColor
-        } else if workspaceActive {
-            layer?.borderWidth = 1
-            layer?.borderColor = NSColor.white.withAlphaComponent(0.35).cgColor
-            layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.08).cgColor
-        } else {
-            layer?.borderWidth = 1
-            layer?.borderColor = NSColor.white.withAlphaComponent(0.2).cgColor
-            layer?.backgroundColor = NSColor.black.withAlphaComponent(0.14).cgColor
-        }
-    }
-}
-
-private final class OverviewTileClickStrip: NSView {
-    private let action: () -> Void
-
-    init(action: @escaping () -> Void, content: () -> NSView) {
-        self.action = action
-        super.init(frame: .zero)
-        setContentHuggingPriority(.defaultLow, for: .horizontal)
-
-        let body = content()
-        body.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(body)
-        NSLayoutConstraint.activate([
-            body.topAnchor.constraint(equalTo: topAnchor),
-            body.leadingAnchor.constraint(equalTo: leadingAnchor),
-            body.trailingAnchor.constraint(equalTo: trailingAnchor),
-            body.bottomAnchor.constraint(equalTo: bottomAnchor),
-        ])
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
-
-    override func mouseDown(with event: NSEvent) {
-        action()
-    }
-
-    override func resetCursorRects() {
-        addCursorRect(bounds, cursor: .pointingHand)
-    }
 }
 
 private final class OverviewWindowRow: NSView {
@@ -774,11 +504,11 @@ private final class OverviewWindowRow: NSView {
         setContentHuggingPriority(.defaultLow, for: .horizontal)
         setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        let iconView = OverviewIconView()
+        let iconView = OverlayIconView()
         iconView.image = icon
         iconView.imageScaling = .scaleProportionallyUpOrDown
 
-        let label = OverviewLabel(
+        let label = OverlayLabel(
             text: title,
             font: .systemFont(ofSize: OverviewMetrics.bodyFontSize, weight: selected ? .semibold : .regular),
             color: selected ? .controlAccentColor : .secondaryLabelColor
@@ -816,59 +546,5 @@ private final class OverviewWindowRow: NSView {
 
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: .pointingHand)
-    }
-}
-
-private final class OverviewIconView: NSImageView {
-    init() {
-        super.init(frame: .zero)
-        translatesAutoresizingMaskIntoConstraints = false
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
-
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        nil
-    }
-}
-
-private final class OverviewFlippedDocumentView: NSView {
-    init() {
-        super.init(frame: .zero)
-    }
-
-    override var isFlipped: Bool { true }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
-}
-
-private final class OverviewLabel: NSTextField {
-    init(text: String, font: NSFont, color: NSColor) {
-        super.init(frame: .zero)
-        stringValue = text
-        self.font = font
-        textColor = color
-        lineBreakMode = .byTruncatingTail
-        maximumNumberOfLines = 1
-        isEditable = false
-        isSelectable = false
-        isBezeled = false
-        drawsBackground = false
-        translatesAutoresizingMaskIntoConstraints = false
-        setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        setContentHuggingPriority(.defaultLow, for: .horizontal)
-        cell?.wraps = false
-        cell?.usesSingleLineMode = true
-        cell?.lineBreakMode = .byTruncatingTail
-        cell?.truncatesLastVisibleLine = true
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
-
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        nil
     }
 }
