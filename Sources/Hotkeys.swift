@@ -17,6 +17,7 @@ package enum HotkeyAction: Equatable {
     case swapMaster
     case toggleLayout
     case toggleWorkspaceOverview
+    case toggleWorkspaceGlance
 }
 
 package struct HotkeyResolver {
@@ -68,6 +69,7 @@ package struct HotkeyResolver {
         if matches(keyCode, hasShift, b.swapMaster) { return .swapMaster }
         if matches(keyCode, hasShift, b.toggleLayout) { return .toggleLayout }
         if matches(keyCode, hasShift, b.workspaceOverview) { return .toggleWorkspaceOverview }
+        if matches(keyCode, hasShift, b.workspaceGlance) { return .toggleWorkspaceGlance }
 
         return .passThrough
     }
@@ -146,7 +148,8 @@ package final class Hotkeys {
             (config.modifier != .maskAlternate && flags.contains(.maskAlternate))
 
         if type == .keyDown,
-           WorkspaceOverview.shared.handleKey(keyCode: keyCode, flags: flags, config: config) {
+           WorkspaceOverview.shared.handleKey(keyCode: keyCode, flags: flags, config: config)
+            || WorkspaceGlance.shared.handleKey(keyCode: keyCode, flags: flags, config: config) {
             return nil
         }
 

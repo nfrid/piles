@@ -1,19 +1,44 @@
 import AppKit
 
-private enum OverviewMetrics {
+private enum GlanceMetrics {
     static let screenFraction: CGFloat = 0.8
     static let gridColumns = 3
     static let headerFontSize: CGFloat = 17
     static let bodyFontSize: CGFloat = 13
     static let hintFontSize: CGFloat = 12
+
+    struct Typography {
+        let appFontSize: CGFloat
+        let titleFontSize: CGFloat
+        let iconSize: CGFloat
+        let contentSpacing: CGFloat
+        let captionSpacing: CGFloat
+        let titleLineCount: Int
+    }
+
+    static func typography(forCellHeight cellHeight: CGFloat) -> Typography {
+        let minHeight: CGFloat = 72
+        let maxHeight: CGFloat = 210
+        let t = min(max((cellHeight - minHeight) / (maxHeight - minHeight), 0), 1)
+        func lerp(_ low: CGFloat, _ high: CGFloat) -> CGFloat { low + (high - low) * t }
+
+        let iconCap = max(cellHeight * 0.4, 24)
+        return Typography(
+            appFontSize: lerp(11, 18),
+            titleFontSize: lerp(9, 14),
+            iconSize: min(lerp(26, 52), iconCap),
+            contentSpacing: lerp(4, 10),
+            captionSpacing: lerp(1, 3),
+            titleLineCount: cellHeight < 96 ? 1 : 2
+        )
+    }
 }
 
-package final class WorkspaceOverview {
-    package static let shared = WorkspaceOverview()
+package final class WorkspaceGlance {
+    package static let shared = WorkspaceGlance()
     private let animationDuration: TimeInterval = 0.14
     private var panel: NSPanel?
     package private(set) var isVisible = false
-    private var selectedWorkspace = 0
     private var selectedWindow = 0
 
     private init() {}
@@ -27,8 +52,8 @@ package final class WorkspaceOverview {
     }
 
     package func show() {
-        guard let state = OverviewState.capture() else { return }
-        WorkspaceGlance.shared.hide()
+        guard let state = GlanceState.capture() else { return }
+        WorkspaceOverview.shared.hide()
         resetSelection(from: state)
         isVisible = true
         present(state: state)
@@ -57,7 +82,7 @@ package final class WorkspaceOverview {
 
     package func refreshIfVisible() {
         guard isVisible else { return }
-        guard let state = OverviewState.capture() else {
+        guard let state = GlanceState.capture() else {
             hide()
             return
         }
@@ -80,13 +105,13 @@ package final class WorkspaceOverview {
         if let number = config.numberKeys[keyCode] {
             let index = number - 1
             DispatchQueue.main.async {
-                self.activate(workspaceIndex: index, windowIndex: nil)
+                self.activate(windowIndex: index)
                 self.hide()
             }
             return true
         }
 
-        let binding = config.bindings.workspaceOverview
+        let binding = config.bindings.workspaceGlance
         let hasModifier = flags.contains(config.modifier)
         let hasExtraModifiers =
             (config.modifier != .maskCommand && flags.contains(.maskCommand)) ||
@@ -103,16 +128,16 @@ package final class WorkspaceOverview {
 
         switch keyCode {
         case Key.h:
-            DispatchQueue.main.async { self.moveWorkspaceHorizontal(-1) }
+            DispatchQueue.main.async { self.moveWindowHorizontal(-1) }
             return true
         case Key.l:
-            DispatchQueue.main.async { self.moveWorkspaceHorizontal(1) }
+            DispatchQueue.main.async { self.moveWindowHorizontal(1) }
             return true
         case Key.j:
-            DispatchQueue.main.async { self.moveWorkspaceRow(1) }
+            DispatchQueue.main.async { self.moveWindowRow(1) }
             return true
         case Key.k:
-            DispatchQueue.main.async { self.moveWorkspaceRow(-1) }
+            DispatchQueue.main.async { self.moveWindowRow(-1) }
             return true
         case Key.return, Key.m:
             DispatchQueue.main.async { self.confirmSelection() }
@@ -122,81 +147,65 @@ package final class WorkspaceOverview {
         }
     }
 
-    private func resetSelection(from state: OverviewState) {
-        selectedWorkspace = state.activeWorkspace
-        syncWindowSelection(from: state)
+    private func resetSelection(from state: GlanceState) {
+        selectedWindow = state.focusedWindowIndex
     }
 
-    private func clampSelection(to state: OverviewState) {
-        selectedWorkspace = min(max(selectedWorkspace, 0), state.workspaces.count - 1)
-        syncWindowSelection(from: state)
-    }
-
-    private func syncWindowSelection(from state: OverviewState) {
-        guard state.workspaces.indices.contains(selectedWorkspace) else {
+    private func clampSelection(to state: GlanceState) {
+        guard !state.windows.isEmpty else {
             selectedWindow = 0
             return
         }
-        selectedWindow = state.workspaces[selectedWorkspace].focusedWindowIndex
+        selectedWindow = min(max(selectedWindow, 0), state.windows.count - 1)
     }
 
-    private func moveWorkspaceHorizontal(_ delta: Int) {
-        guard let state = OverviewState.capture() else { return }
-        let count = state.workspaces.count
-        let columns = OverviewMetrics.gridColumns
+    private func moveWindowHorizontal(_ delta: Int) {
+        guard let state = GlanceState.capture() else { return }
+        let count = state.windows.count
+        let columns = GlanceMetrics.gridColumns
         guard count > 0 else { return }
 
-        let row = selectedWorkspace / columns
+        let row = selectedWindow / columns
         let rowStart = row * columns
         let slots = min(columns, count - rowStart)
         guard slots > 0 else { return }
 
-        let column = selectedWorkspace - rowStart
-        selectedWorkspace = rowStart + (column + delta + slots) % slots
-        syncWindowSelection(from: state)
+        let column = selectedWindow - rowStart
+        selectedWindow = rowStart + (column + delta + slots) % slots
         present(state: state, animated: false)
     }
 
-    private func moveWorkspaceRow(_ delta: Int) {
-        guard let state = OverviewState.capture() else { return }
-        let count = state.workspaces.count
+    private func moveWindowRow(_ delta: Int) {
+        guard let state = GlanceState.capture() else { return }
+        let count = state.windows.count
         guard count > 0 else { return }
-        let step = delta * OverviewMetrics.gridColumns
-        selectedWorkspace = (selectedWorkspace + step + count) % count
-        syncWindowSelection(from: state)
+        let step = delta * GlanceMetrics.gridColumns
+        selectedWindow = (selectedWindow + step + count) % count
         present(state: state, animated: false)
     }
 
     private func confirmSelection() {
-        WorkspaceManager.shared.switchTo(selectedWorkspace)
+        activate(windowIndex: selectedWindow)
         hide()
     }
 
-    private func activate(workspaceIndex: Int, windowIndex: Int?) {
-        guard let state = OverviewState.capture(),
-              state.workspaces.indices.contains(workspaceIndex)
+    private func activate(windowIndex: Int) {
+        guard let state = GlanceState.capture(),
+              state.windows.indices.contains(windowIndex)
         else { return }
-
-        let windows = state.workspaces[workspaceIndex].windows
-        if let windowIndex, windows.indices.contains(windowIndex) {
-            WorkspaceManager.shared.focusWindow(workspaceIndex: workspaceIndex, windowIndex: windowIndex)
-        } else {
-            WorkspaceManager.shared.switchTo(workspaceIndex)
-        }
+        WorkspaceManager.shared.focusWindow(
+            workspaceIndex: state.workspaceIndex,
+            windowIndex: windowIndex
+        )
     }
 
-    private func present(state: OverviewState, animated: Bool = true) {
+    private func present(state: GlanceState, animated: Bool = true) {
         let panel = panel(for: state.screen)
-        let selection = OverviewSelection(workspace: selectedWorkspace, window: selectedWindow)
-        panel.contentView = OverviewRootView(
+        panel.contentView = GlanceRootView(
             state: state,
-            selection: selection,
-            onSelectWorkspace: { [weak self] index in
-                self?.activate(workspaceIndex: index, windowIndex: nil)
-                self?.hide()
-            },
-            onSelectWindow: { [weak self] workspaceIndex, windowIndex in
-                self?.activate(workspaceIndex: workspaceIndex, windowIndex: windowIndex)
+            selectedWindow: selectedWindow,
+            onSelectWindow: { [weak self] index in
+                self?.activate(windowIndex: index)
                 self?.hide()
             },
             onDismiss: { [weak self] in
@@ -245,109 +254,95 @@ package final class WorkspaceOverview {
     }
 }
 
-private struct OverviewSelection {
-    let workspace: Int
-    let window: Int
-}
-
-private struct OverviewState {
+private struct GlanceState {
     let screen: NSScreen
     let monitorLabel: String?
-    let workspaceCount: Int
-    let activeWorkspace: Int
-    let workspaces: [OverviewWorkspace]
+    let workspaceIndex: Int
+    let workspaceNumber: Int
+    let windows: [GlanceWindow]
+    let focusedWindowIndex: Int
 
-    static func capture() -> OverviewState? {
+    static func capture() -> GlanceState? {
         let ws = WorkspaceManager.shared
         guard !ws.monitors.isEmpty else { return nil }
 
         let monitor = ws.focusedMonitor
-        let count = Config.shared.workspaceCount
-        var workspaces: [OverviewWorkspace] = []
-        workspaces.reserveCapacity(count)
-
-        for index in 0..<count {
-            let windows = monitor.workspaces[index]
-            let focusedIndex = windows.isEmpty
-                ? 0
-                : min(monitor.focusedIndices[index], windows.count - 1)
-            let items = windows.enumerated().map { windowIndex, window in
-                OverviewWindow(
-                    title: windowLabel(for: window),
-                    focused: windowIndex == focusedIndex
-                )
-            }
-            workspaces.append(OverviewWorkspace(
-                index: index,
-                number: index + 1,
-                active: index == monitor.active,
-                occupied: !windows.isEmpty,
-                focusedWindowIndex: focusedIndex,
-                windows: items
-            ))
+        let workspaceIndex = monitor.active
+        let tracked = monitor.workspaces[workspaceIndex]
+        let focusedIndex = tracked.isEmpty
+            ? 0
+            : min(monitor.focusedIndices[workspaceIndex], tracked.count - 1)
+        let windows = tracked.enumerated().map { windowIndex, window in
+            let labels = glanceLabels(for: window)
+            return GlanceWindow(
+                appName: labels.appName,
+                windowTitle: labels.windowTitle,
+                icon: appIcon(for: window),
+                focused: windowIndex == focusedIndex
+            )
         }
 
         let monitorLabel = ws.monitors.count > 1 ? "Monitor \(ws.focusedMonitorIndex + 1)" : nil
-        return OverviewState(
+        return GlanceState(
             screen: monitor.screen,
             monitorLabel: monitorLabel,
-            workspaceCount: count,
-            activeWorkspace: monitor.active,
-            workspaces: workspaces
+            workspaceIndex: workspaceIndex,
+            workspaceNumber: workspaceIndex + 1,
+            windows: windows,
+            focusedWindowIndex: focusedIndex
         )
     }
 
-    private static func windowLabel(for window: TrackedWindow) -> String {
-        if let title = window.title()?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
-            return title
-        }
+    private static func glanceLabels(for window: TrackedWindow) -> (appName: String, windowTitle: String) {
+        let trimmedApp = window.appName()?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let appName = (trimmedApp?.isEmpty == false) ? trimmedApp! : "App"
+        let trimmedTitle = window.title()?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let windowTitle = (trimmedTitle?.isEmpty == false) ? trimmedTitle! : "Untitled window"
+        return (appName, windowTitle)
+    }
+
+    private static func appIcon(for window: TrackedWindow) -> NSImage {
         if let app = NSRunningApplication(processIdentifier: window.pid),
-           let name = app.localizedName?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !name.isEmpty {
-            return name
+           let icon = app.icon {
+            return icon
         }
-        return "Window"
+        if let bundleID = window.bundleID(),
+           let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
+            return NSWorkspace.shared.icon(forFile: url.path)
+        }
+        return NSWorkspace.shared.icon(for: .application)
     }
 }
 
-private struct OverviewWorkspace {
-    let index: Int
-    let number: Int
-    let active: Bool
-    let occupied: Bool
-    let focusedWindowIndex: Int
-    let windows: [OverviewWindow]
-}
-
-private struct OverviewWindow {
-    let title: String
+private struct GlanceWindow {
+    let appName: String
+    let windowTitle: String
+    let icon: NSImage
     let focused: Bool
 }
 
-private final class OverviewRootView: NSView {
+private final class GlanceRootView: NSView {
     private let onDismiss: () -> Void
-    private weak var cardView: OverviewCardView?
+    private weak var cardView: GlanceCardView?
 
     init(
-        state: OverviewState,
-        selection: OverviewSelection,
-        onSelectWorkspace: @escaping (Int) -> Void,
-        onSelectWindow: @escaping (Int, Int) -> Void,
+        state: GlanceState,
+        selectedWindow: Int,
+        onSelectWindow: @escaping (Int) -> Void,
         onDismiss: @escaping () -> Void
     ) {
         self.onDismiss = onDismiss
         super.init(frame: .zero)
 
-        let backdrop = OverviewBackdropView(onDismiss: onDismiss)
+        let backdrop = GlanceBackdropView(onDismiss: onDismiss)
         backdrop.translatesAutoresizingMaskIntoConstraints = false
 
-        let effect = OverviewDimmingView()
+        let effect = GlanceDimmingView()
         effect.translatesAutoresizingMaskIntoConstraints = false
 
-        let card = OverviewCardView(
-            overviewState: state,
-            selection: selection,
-            onSelectWorkspace: onSelectWorkspace,
+        let card = GlanceCardView(
+            state: state,
+            selectedWindow: selectedWindow,
             onSelectWindow: onSelectWindow
         )
         card.translatesAutoresizingMaskIntoConstraints = false
@@ -358,8 +353,8 @@ private final class OverviewRootView: NSView {
         addSubview(card)
 
         let visible = state.screen.visibleFrame
-        let cardWidth = visible.width * OverviewMetrics.screenFraction
-        let cardHeight = visible.height * OverviewMetrics.screenFraction
+        let cardWidth = visible.width * GlanceMetrics.screenFraction
+        let cardHeight = visible.height * GlanceMetrics.screenFraction
 
         NSLayoutConstraint.activate([
             backdrop.topAnchor.constraint(equalTo: topAnchor),
@@ -390,7 +385,7 @@ private final class OverviewRootView: NSView {
     }
 }
 
-private final class OverviewDimmingView: NSVisualEffectView {
+private final class GlanceDimmingView: NSVisualEffectView {
     init() {
         super.init(frame: .zero)
         material = .hudWindow
@@ -408,7 +403,7 @@ private final class OverviewDimmingView: NSVisualEffectView {
     }
 }
 
-private final class OverviewBackdropView: NSView {
+private final class GlanceBackdropView: NSView {
     private let onDismiss: () -> Void
 
     init(onDismiss: @escaping () -> Void) {
@@ -424,12 +419,11 @@ private final class OverviewBackdropView: NSView {
     }
 }
 
-private final class OverviewCardView: NSVisualEffectView {
+private final class GlanceCardView: NSVisualEffectView {
     init(
-        overviewState: OverviewState,
-        selection: OverviewSelection,
-        onSelectWorkspace: @escaping (Int) -> Void,
-        onSelectWindow: @escaping (Int, Int) -> Void
+        state: GlanceState,
+        selectedWindow: Int,
+        onSelectWindow: @escaping (Int) -> Void
     ) {
         super.init(frame: .zero)
         material = .popover
@@ -439,14 +433,13 @@ private final class OverviewCardView: NSVisualEffectView {
         layer?.cornerRadius = 12
         layer?.masksToBounds = true
 
-        let hint = NSTextField(labelWithString: "h/l column · j/k row · return/m open · 1–9 jump · esc close")
-        hint.font = .systemFont(ofSize: OverviewMetrics.hintFontSize, weight: .medium)
+        let hint = NSTextField(labelWithString: "h/l column · j/k row · return/m focus · 1–9 jump · esc close")
+        hint.font = .systemFont(ofSize: GlanceMetrics.hintFontSize, weight: .medium)
         hint.textColor = .tertiaryLabelColor
 
-        let grid = OverviewTileGridView(
-            workspaces: overviewState.workspaces,
-            selection: selection,
-            onSelectWorkspace: onSelectWorkspace,
+        let grid = GlanceWindowGridView(
+            windows: state.windows,
+            selectedWindow: selectedWindow,
             onSelectWindow: onSelectWindow
         )
 
@@ -456,9 +449,15 @@ private final class OverviewCardView: NSVisualEffectView {
         header.alignment = .leading
         header.spacing = 6
         header.translatesAutoresizingMaskIntoConstraints = false
-        if let monitorLabel = overviewState.monitorLabel {
+
+        let title = NSTextField(labelWithString: "Workspace \(state.workspaceNumber)")
+        title.font = .systemFont(ofSize: GlanceMetrics.headerFontSize, weight: .bold)
+        title.textColor = .labelColor
+        header.addArrangedSubview(title)
+
+        if let monitorLabel = state.monitorLabel {
             let label = NSTextField(labelWithString: monitorLabel)
-            label.font = .systemFont(ofSize: OverviewMetrics.hintFontSize, weight: .semibold)
+            label.font = .systemFont(ofSize: GlanceMetrics.hintFontSize, weight: .semibold)
             label.textColor = .secondaryLabelColor
             header.addArrangedSubview(label)
         }
@@ -482,17 +481,15 @@ private final class OverviewCardView: NSVisualEffectView {
     required init?(coder: NSCoder) { fatalError() }
 }
 
-/// Fixed-size tile grid: every workspace cell gets the same width and height.
-private final class OverviewTileGridView: NSView {
-    private let columns = OverviewMetrics.gridColumns
+private final class GlanceWindowGridView: NSView {
+    private let columns = GlanceMetrics.gridColumns
     private let spacing: CGFloat = 10
-    private var tiles: [OverviewWorkspaceCell] = []
+    private var tiles: [GlanceWindowCell] = []
 
     init(
-        workspaces: [OverviewWorkspace],
-        selection: OverviewSelection,
-        onSelectWorkspace: @escaping (Int) -> Void,
-        onSelectWindow: @escaping (Int, Int) -> Void
+        windows: [GlanceWindow],
+        selectedWindow: Int,
+        onSelectWindow: @escaping (Int) -> Void
     ) {
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
@@ -500,13 +497,25 @@ private final class OverviewTileGridView: NSView {
         setContentHuggingPriority(.defaultLow, for: .vertical)
         setContentCompressionResistancePriority(.defaultLow, for: .vertical)
 
-        for workspace in workspaces {
-            let cell = OverviewWorkspaceCell(
-                workspace: workspace,
-                selected: workspace.index == selection.workspace,
-                selectedWindow: selection.window,
-                onSelectWorkspace: { onSelectWorkspace(workspace.index) },
-                onSelectWindow: { onSelectWindow(workspace.index, $0) }
+        if windows.isEmpty {
+            let empty = GlanceEmptyView()
+            addSubview(empty)
+            tiles = []
+            empty.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([
+                empty.topAnchor.constraint(equalTo: topAnchor),
+                empty.leadingAnchor.constraint(equalTo: leadingAnchor),
+                empty.trailingAnchor.constraint(equalTo: trailingAnchor),
+                empty.bottomAnchor.constraint(equalTo: bottomAnchor),
+            ])
+            return
+        }
+
+        for (index, window) in windows.enumerated() {
+            let cell = GlanceWindowCell(
+                window: window,
+                selected: index == selectedWindow,
+                onSelect: { onSelectWindow(index) }
             )
             tiles.append(cell)
             addSubview(cell)
@@ -540,79 +549,121 @@ private final class OverviewTileGridView: NSView {
                 width: cellWidth,
                 height: cellHeight
             )
+            tile.updateTypography(forCellHeight: cellHeight)
         }
     }
 }
 
-private final class OverviewWorkspaceCell: NSView {
-    init(
-        workspace: OverviewWorkspace,
-        selected: Bool,
-        selectedWindow: Int,
-        onSelectWorkspace: @escaping () -> Void,
-        onSelectWindow: @escaping (Int) -> Void
-    ) {
+private final class GlanceEmptyView: NSView {
+    init() {
+        super.init(frame: .zero)
+        let label = NSTextField(labelWithString: "No windows on this workspace")
+        label.font = .systemFont(ofSize: GlanceMetrics.bodyFontSize, weight: .medium)
+        label.textColor = .tertiaryLabelColor
+        label.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(label)
+        NSLayoutConstraint.activate([
+            label.centerXAnchor.constraint(equalTo: centerXAnchor),
+            label.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+}
+
+private final class GlanceWindowCell: NSView {
+    private let onSelect: () -> Void
+    private let selected: Bool
+    private let appLabel: GlanceLabel
+    private let titleLabel: GlanceLabel
+    private let iconView: GlanceIconView
+    private let iconWidthConstraint: NSLayoutConstraint
+    private let iconHeightConstraint: NSLayoutConstraint
+    private let caption: NSStackView
+    private let content: NSStackView
+    private var lastCellHeight: CGFloat = 0
+
+    init(window: GlanceWindow, selected: Bool, onSelect: @escaping () -> Void) {
+        self.onSelect = onSelect
+        self.selected = selected
+        appLabel = GlanceLabel(
+            text: window.appName,
+            font: .systemFont(ofSize: GlanceMetrics.bodyFontSize, weight: .semibold),
+            color: selected ? .controlAccentColor : .labelColor,
+            maximumNumberOfLines: 1,
+            alignment: .center
+        )
+        titleLabel = GlanceLabel(
+            text: window.windowTitle,
+            font: .systemFont(ofSize: GlanceMetrics.hintFontSize, weight: selected ? .medium : .regular),
+            color: selected ? .controlAccentColor : .secondaryLabelColor,
+            maximumNumberOfLines: 2,
+            alignment: .center
+        )
+        iconView = GlanceIconView()
+        iconWidthConstraint = iconView.widthAnchor.constraint(equalToConstant: 44)
+        iconHeightConstraint = iconView.heightAnchor.constraint(equalToConstant: 44)
+        caption = NSStackView(views: [appLabel, titleLabel])
+        content = NSStackView()
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = 8
-        applyStyle(selected: selected, workspaceActive: workspace.active)
+        applyStyle(selected: selected, focused: window.focused)
 
-        let content = NSStackView()
+        iconView.image = window.icon
+        iconView.imageScaling = .scaleProportionallyUpOrDown
+        NSLayoutConstraint.activate([iconWidthConstraint, iconHeightConstraint])
+
+        caption.orientation = .vertical
+        caption.alignment = .centerX
+        caption.translatesAutoresizingMaskIntoConstraints = false
+
         content.orientation = .vertical
-        content.alignment = .leading
-        content.spacing = 4
+        content.alignment = .centerX
         content.translatesAutoresizingMaskIntoConstraints = false
-        content.edgeInsets = NSEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
-
-        content.addArrangedSubview(OverviewTileClickStrip(action: onSelectWorkspace) {
-            OverviewLabel(
-                text: "\(workspace.number)",
-                font: .systemFont(ofSize: OverviewMetrics.headerFontSize, weight: .bold),
-                color: selected ? .controlAccentColor : .labelColor
-            )
-        })
-
-        if workspace.windows.isEmpty {
-            content.addArrangedSubview(OverviewTileClickStrip(action: onSelectWorkspace) {
-                OverviewLabel(
-                    text: "empty",
-                    font: .systemFont(ofSize: OverviewMetrics.bodyFontSize, weight: .medium),
-                    color: .tertiaryLabelColor
-                )
-            })
-        } else {
-            for (index, window) in workspace.windows.enumerated() {
-                let rowSelected = selected && index == selectedWindow
-                content.addArrangedSubview(OverviewWindowRow(
-                    title: window.title,
-                    selected: rowSelected || window.focused,
-                    action: { onSelectWindow(index) }
-                ))
-            }
-        }
-
-        let filler = OverviewTileClickStrip(action: onSelectWorkspace) { NSView() }
-        filler.setContentHuggingPriority(.defaultLow, for: .vertical)
-        content.addArrangedSubview(filler)
+        content.addArrangedSubview(iconView)
+        content.addArrangedSubview(caption)
 
         addSubview(content)
         NSLayoutConstraint.activate([
-            content.topAnchor.constraint(equalTo: topAnchor),
-            content.leadingAnchor.constraint(equalTo: leadingAnchor),
-            content.trailingAnchor.constraint(equalTo: trailingAnchor),
-            content.bottomAnchor.constraint(equalTo: bottomAnchor),
+            content.centerXAnchor.constraint(equalTo: centerXAnchor),
+            content.centerYAnchor.constraint(equalTo: centerYAnchor),
+            content.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 10),
+            content.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -10),
+            caption.widthAnchor.constraint(equalTo: content.widthAnchor),
+            appLabel.widthAnchor.constraint(equalTo: caption.widthAnchor),
+            titleLabel.widthAnchor.constraint(equalTo: caption.widthAnchor),
         ])
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
-    private func applyStyle(selected: Bool, workspaceActive: Bool) {
+    func updateTypography(forCellHeight cellHeight: CGFloat) {
+        guard abs(cellHeight - lastCellHeight) > 0.5 else { return }
+        lastCellHeight = cellHeight
+
+        let type = GlanceMetrics.typography(forCellHeight: cellHeight)
+        iconWidthConstraint.constant = type.iconSize
+        iconHeightConstraint.constant = type.iconSize
+        content.spacing = type.contentSpacing
+        caption.spacing = type.captionSpacing
+
+        appLabel.font = .systemFont(ofSize: type.appFontSize, weight: .semibold)
+        titleLabel.font = .systemFont(
+            ofSize: type.titleFontSize,
+            weight: selected ? .medium : .regular
+        )
+        titleLabel.maximumNumberOfLines = type.titleLineCount
+    }
+
+    private func applyStyle(selected: Bool, focused: Bool) {
         if selected {
             layer?.borderWidth = 2
             layer?.borderColor = NSColor.controlAccentColor.cgColor
             layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.18).cgColor
-        } else if workspaceActive {
+        } else if focused {
             layer?.borderWidth = 1
             layer?.borderColor = NSColor.white.withAlphaComponent(0.35).cgColor
             layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.08).cgColor
@@ -622,32 +673,9 @@ private final class OverviewWorkspaceCell: NSView {
             layer?.backgroundColor = NSColor.black.withAlphaComponent(0.14).cgColor
         }
     }
-}
-
-private final class OverviewTileClickStrip: NSView {
-    private let action: () -> Void
-
-    init(action: @escaping () -> Void, content: () -> NSView) {
-        self.action = action
-        super.init(frame: .zero)
-        setContentHuggingPriority(.defaultLow, for: .horizontal)
-
-        let body = content()
-        body.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(body)
-        NSLayoutConstraint.activate([
-            body.topAnchor.constraint(equalTo: topAnchor),
-            body.leadingAnchor.constraint(equalTo: leadingAnchor),
-            body.trailingAnchor.constraint(equalTo: trailingAnchor),
-            body.bottomAnchor.constraint(equalTo: bottomAnchor),
-        ])
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
 
     override func mouseDown(with event: NSEvent) {
-        action()
+        onSelect()
     }
 
     override func resetCursorRects() {
@@ -655,54 +683,41 @@ private final class OverviewTileClickStrip: NSView {
     }
 }
 
-private final class OverviewWindowRow: NSView {
-    private let action: () -> Void
-
-    init(title: String, selected: Bool, action: @escaping () -> Void) {
-        self.action = action
+private final class GlanceIconView: NSImageView {
+    init() {
         super.init(frame: .zero)
-        setContentHuggingPriority(.defaultHigh, for: .vertical)
-
-        let label = OverviewLabel(
-            text: title,
-            font: .systemFont(ofSize: OverviewMetrics.bodyFontSize, weight: selected ? .semibold : .regular),
-            color: selected ? .controlAccentColor : .secondaryLabelColor
-        )
-        addSubview(label)
-        NSLayoutConstraint.activate([
-            label.topAnchor.constraint(equalTo: topAnchor),
-            label.leadingAnchor.constraint(equalTo: leadingAnchor),
-            label.trailingAnchor.constraint(equalTo: trailingAnchor),
-            label.bottomAnchor.constraint(equalTo: bottomAnchor),
-            heightAnchor.constraint(greaterThanOrEqualToConstant: 22),
-        ])
+        translatesAutoresizingMaskIntoConstraints = false
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
-    override func mouseDown(with event: NSEvent) {
-        action()
-    }
-
-    override func resetCursorRects() {
-        addCursorRect(bounds, cursor: .pointingHand)
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
     }
 }
 
-private final class OverviewLabel: NSTextField {
-    init(text: String, font: NSFont, color: NSColor) {
+private final class GlanceLabel: NSTextField {
+    init(
+        text: String,
+        font: NSFont,
+        color: NSColor,
+        maximumNumberOfLines: Int = 1,
+        alignment: NSTextAlignment = .natural
+    ) {
         super.init(frame: .zero)
         stringValue = text
         self.font = font
         textColor = color
+        self.alignment = alignment
         lineBreakMode = .byTruncatingTail
-        maximumNumberOfLines = 1
+        self.maximumNumberOfLines = maximumNumberOfLines
         isEditable = false
         isSelectable = false
         isBezeled = false
         drawsBackground = false
         translatesAutoresizingMaskIntoConstraints = false
+        setContentHuggingPriority(.required, for: .vertical)
     }
 
     @available(*, unavailable)

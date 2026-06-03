@@ -109,6 +109,7 @@ package struct BuiltinBindings {
     var moveMonitorNext: (key: UInt16, shift: Bool) = (Key.period, true)
     var lastWorkspace: (key: UInt16, shift: Bool) = (Key.tab, false)
     var workspaceOverview: (key: UInt16, shift: Bool) = (Key.o, false)
+    var workspaceGlance: (key: UInt16, shift: Bool) = (Key.o, true)
 }
 
 private typealias BuiltinBindingKeyPath = WritableKeyPath<BuiltinBindings, (key: UInt16, shift: Bool)>
@@ -128,6 +129,7 @@ private let builtinBindingKeys: [(name: String, keyPath: BuiltinBindingKeyPath)]
     ("move_monitor_next", \.moveMonitorNext),
     ("last_workspace", \.lastWorkspace),
     ("workspace_overview", \.workspaceOverview),
+    ("workspace_glance", \.workspaceGlance),
 ]
 
 package struct WindowAssignment {

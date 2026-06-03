@@ -52,6 +52,8 @@ reinstall, restart the running app, and open it.
   window and its neighbors by title
 - **workspace overview** - option+o opens an 80% screen grid of workspaces and
   window titles; h/l move by column, j/k move by row, return or m to open, esc to close
+- **workspace glance** - option+shift+o opens the same style overlay for windows on
+  the current workspace only; navigate and focus without leaving the workspace
 - **app switcher follow** - command-tab to a hidden workspace window reveals the
   workspace that owns it
 - **window assignment rules** - place windows by app, bundle id, exact title, or
@@ -84,7 +86,8 @@ The default modifier is option. You can change it to `control` or `command` in
 | option+shift+comma / option+shift+period | move focused window to previous / next monitor            |
 | option+shift+return                      | run the default custom command: `open -n -a Terminal`     |
 | option+drag tile divider                 | resize the master area                                    |
-| option+o                                 | toggle workspace overview                                 |
+| option+o                                 | toggle workspace overview (all workspaces)                |
+| option+shift+o                           | toggle workspace glance (current workspace windows)       |
 
 ## Config
 
@@ -151,6 +154,7 @@ piles-ctl ping
 piles-ctl workspace next
 piles-ctl workspace prev
 piles-ctl overview
+piles-ctl glance
 piles-ctl workspace 3
 piles-ctl workspace 3 --move
 ```

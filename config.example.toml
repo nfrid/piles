@@ -35,6 +35,7 @@
 # move_monitor_next = "shift+period"
 # last_workspace = "tab"
 # workspace_overview = "o"
+# workspace_glance = "shift+o"
 
 # custom key bindings that run shell commands
 # [[custom]]

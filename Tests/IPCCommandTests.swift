@@ -42,6 +42,7 @@ enum IPCCommandTests {
         resolves("workspace prev --move", to: .switchToOccupied(offset: -1, movingFocusedWindow: true))
         resolves("workspace last", to: .switchToLast)
         resolves("overview", to: .toggleWorkspaceOverview)
+        resolves("glance", to: .toggleWorkspaceGlance)
         resolves("focus next", to: .focusNext)
         resolves("window move prev", to: .moveFocusedWindowPrev)
         resolves("layout toggle", to: .toggleLayout)

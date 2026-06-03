@@ -12,6 +12,7 @@ private func printUsage() {
           workspace next|prev [--move]
           workspace last
           overview
+          glance
           focus next|prev
           window move next|prev
           layout toggle

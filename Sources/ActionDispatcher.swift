@@ -47,6 +47,8 @@ package enum ActionDispatcher {
             onMain { WorkspaceManager.shared.toggleLayout() }
         case .toggleWorkspaceOverview:
             onMain { WorkspaceOverview.shared.toggle() }
+        case .toggleWorkspaceGlance:
+            onMain { WorkspaceGlance.shared.toggle() }
         }
     }
 

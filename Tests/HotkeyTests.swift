@@ -66,6 +66,10 @@ enum HotkeyTests {
             resolver.resolve(keyCode: Key.o, flags: [.maskAlternate], config: config) == .toggleWorkspaceOverview,
             "default workspace overview resolves"
         )
+        check(
+            resolver.resolve(keyCode: Key.o, flags: [.maskAlternate, .maskShift], config: config) == .toggleWorkspaceGlance,
+            "default workspace glance resolves"
+        )
 
         return (passed, failed)
     }

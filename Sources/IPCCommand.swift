@@ -26,6 +26,10 @@ package enum IPCCommandParser {
             guard parts.count == 1 else { return .failure(.invalid("overview takes no arguments")) }
             return .success(.toggleWorkspaceOverview)
 
+        case "glance":
+            guard parts.count == 1 else { return .failure(.invalid("glance takes no arguments")) }
+            return .success(.toggleWorkspaceGlance)
+
         case "focus":
             return parseFocus(parts.dropFirst())
 
