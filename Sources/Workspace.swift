@@ -27,6 +27,10 @@ package final class WorkspaceManager {
 
     var focusedMonitor: Monitor { monitors[focusedMonitorIndex] }
 
+    var focusedMonitorLabel: String? {
+        monitors.count > 1 ? "Monitor \(focusedMonitorIndex + 1)" : nil
+    }
+
     private init() {}
 
     package func bootstrap() {
@@ -80,11 +84,6 @@ package final class WorkspaceManager {
         } else {
             focusedMonitor.switchTo(target)
         }
-        commitChanges()
-    }
-
-    func moveActiveWindowTo(_ index: Int) {
-        focusedMonitor.moveActiveWindowTo(index)
         commitChanges()
     }
 
@@ -224,23 +223,11 @@ package final class WorkspaceManager {
     }
 
     func followExternalFocus(pid: pid_t) {
-        if Thread.isMainThread {
-            startExternalFocus(pid: pid)
-        } else {
-            DispatchQueue.main.async {
-                self.startExternalFocus(pid: pid)
-            }
-        }
+        MainThread.run { self.startExternalFocus(pid: pid) }
     }
 
     func handleWindowGeometryChange(pid: pid_t, element: AXUIElement) {
-        if Thread.isMainThread {
-            performWindowGeometryChange(pid: pid, element: element)
-        } else {
-            DispatchQueue.main.async {
-                self.performWindowGeometryChange(pid: pid, element: element)
-            }
-        }
+        MainThread.run { self.performWindowGeometryChange(pid: pid, element: element) }
     }
 
     private func performWindowGeometryChange(pid: pid_t, element: AXUIElement) {

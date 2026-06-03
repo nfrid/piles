@@ -58,7 +58,7 @@ package final class WorkspaceOverview {
            !flags.contains(.maskShift),
            !flags.contains(.maskCommand),
            !config.matchesConfiguredModifier(flags) {
-            DispatchQueue.main.async {
+            MainThread.run {
                 WorkspaceGlance.shared.show(
                     workspaceIndex: self.selectedWorkspace,
                     windowIndex: self.selectedWindow
@@ -76,19 +76,19 @@ package final class WorkspaceOverview {
         case .passThrough:
             return false
         case .dismiss:
-            DispatchQueue.main.async { self.hide() }
+            MainThread.run { self.hide() }
             return true
         case .navigateHorizontal(let delta):
-            DispatchQueue.main.async { self.moveWorkspaceHorizontal(delta) }
+            MainThread.run { self.moveWorkspaceHorizontal(delta) }
             return true
         case .navigateVertical(let delta):
-            DispatchQueue.main.async { self.moveWorkspaceRow(delta) }
+            MainThread.run { self.moveWorkspaceRow(delta) }
             return true
         case .confirm:
-            DispatchQueue.main.async { self.confirmSelection() }
+            MainThread.run { self.confirmSelection() }
             return true
         case .numberJump(let index):
-            DispatchQueue.main.async {
+            MainThread.run {
                 self.activate(workspaceIndex: index, windowIndex: nil)
                 self.hide()
             }
@@ -211,9 +211,7 @@ private struct OverviewState {
 
         for index in 0..<count {
             let windows = monitor.workspaces[index]
-            let focusedIndex = windows.isEmpty
-                ? 0
-                : min(monitor.focusedIndices[index], windows.count - 1)
+            let focusedIndex = monitor.clampedFocus(in: index)
             let items = windows.enumerated().map { windowIndex, window in
                 OverviewWindow(
                     title: window.displayTitle(),
@@ -231,7 +229,7 @@ private struct OverviewState {
             ))
         }
 
-        let monitorLabel = ws.monitors.count > 1 ? "Monitor \(ws.focusedMonitorIndex + 1)" : nil
+        let monitorLabel = ws.focusedMonitorLabel
         return OverviewState(
             screen: monitor.screen,
             monitorLabel: monitorLabel,

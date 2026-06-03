@@ -167,7 +167,7 @@ private struct MonocleBarState: Equatable {
         guard !windows.isEmpty else { return nil }
 
         let items = windows.map { MonocleBarItem(title: $0.displayTitle()) }
-        let focusedIndex = min(monitor.focusedIndices[monitor.active], windows.count - 1)
+        let focusedIndex = monitor.clampedFocus(in: monitor.active)
         return MonocleBarState(
             displayID: monitor.displayID,
             screen: monitor.screen,

@@ -219,17 +219,13 @@ private struct StatusState: Equatable {
     let monitorCount: Int
     let focusedMonitorIndex: Int
     let activeWorkspace: Int
-    let activeLayout: Layout
     let occupiedWorkspaces: [Bool]
-    let activeWindowCount: Int
-    let activeFocusedIndex: Int
 
     static func capture(_ ws: WorkspaceManager) -> StatusState {
         guard !ws.monitors.isEmpty else {
             return StatusState(
                 monitorCount: 0, focusedMonitorIndex: 0, activeWorkspace: 0,
-                activeLayout: .tile, occupiedWorkspaces: [], activeWindowCount: 0,
-                activeFocusedIndex: 0
+                occupiedWorkspaces: []
             )
         }
         let monitor = ws.focusedMonitor
@@ -238,10 +234,7 @@ private struct StatusState: Equatable {
             monitorCount: ws.monitors.count,
             focusedMonitorIndex: ws.focusedMonitorIndex,
             activeWorkspace: monitor.active,
-            activeLayout: monitor.layouts[monitor.active],
-            occupiedWorkspaces: occupied,
-            activeWindowCount: monitor.workspaces[monitor.active].count,
-            activeFocusedIndex: monitor.focusedIndices[monitor.active]
+            occupiedWorkspaces: occupied
         )
     }
 }

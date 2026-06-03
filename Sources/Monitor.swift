@@ -119,6 +119,13 @@ package struct MonitorState {
         return Swift.min(Swift.max(position - 1, 0), workspaces[workspaceIndex].count)
     }
 
+    func clampedFocus(in workspaceIndex: Int) -> Int {
+        guard workspaces.indices.contains(workspaceIndex) else { return 0 }
+        let count = workspaces[workspaceIndex].count
+        guard count > 0 else { return 0 }
+        return Swift.min(Swift.max(focusedIndices[workspaceIndex], 0), count - 1)
+    }
+
     mutating func insertWindow(_ window: TrackedWindow, workspace: Int? = nil, position: Int? = nil) {
         let workspaceIndex = resolvedWorkspaceIndex(workspace)
         let insertIndex = resolvedInsertIndex(position, in: workspaceIndex)
@@ -234,6 +241,10 @@ package final class Monitor {
         self.screen = screen
     }
 
+    func clampedFocus(in workspaceIndex: Int) -> Int {
+        state.clampedFocus(in: workspaceIndex)
+    }
+
     func switchTo(_ index: Int) {
         guard workspaces.indices.contains(index), index != active else { return }
         saveFocusedIndex()
@@ -258,18 +269,6 @@ package final class Monitor {
 
         let target = workspaces[active][focusedIndices[active]]
         focusInActiveLayout(target)
-    }
-
-    func moveActiveWindowTo(_ index: Int) {
-        guard index != active else { return }
-        guard let moved = moveActiveFocusedWindow(to: index) else { return }
-
-        retile()
-        moved.hideOffscreen(WindowManager.screenRect(for: self.screen))
-
-        if let next = workspaces[active].first {
-            next.focus()
-        }
     }
 
     func moveActiveWindowAndSwitchTo(_ index: Int) {
@@ -622,7 +621,7 @@ package final class Monitor {
     func restoreFocusedWindow() {
         let windows = workspaces[active]
         guard !windows.isEmpty else { return }
-        let idx = activeFullscreenIndex ?? min(focusedIndices[active], windows.count - 1)
+        let idx = activeFullscreenIndex ?? clampedFocus(in: active)
         let target = windows[idx]
         focusInActiveLayout(target)
     }

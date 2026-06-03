@@ -100,19 +100,19 @@ package final class WorkspaceGlance {
         case .passThrough:
             return false
         case .dismiss:
-            DispatchQueue.main.async { self.hide() }
+            MainThread.run { self.hide() }
             return true
         case .navigateHorizontal(let delta):
-            DispatchQueue.main.async { self.moveWindowHorizontal(delta) }
+            MainThread.run { self.moveWindowHorizontal(delta) }
             return true
         case .navigateVertical(let delta):
-            DispatchQueue.main.async { self.moveWindowRow(delta) }
+            MainThread.run { self.moveWindowRow(delta) }
             return true
         case .confirm:
-            DispatchQueue.main.async { self.confirmSelection() }
+            MainThread.run { self.confirmSelection() }
             return true
         case .numberJump(let index):
-            DispatchQueue.main.async {
+            MainThread.run {
                 self.activate(windowIndex: index)
                 self.hide()
             }
@@ -216,9 +216,7 @@ private struct GlanceState {
         let workspaceIndex = workspaceIndex ?? monitor.active
         guard monitor.workspaces.indices.contains(workspaceIndex) else { return nil }
         let tracked = monitor.workspaces[workspaceIndex]
-        let focusedIndex = tracked.isEmpty
-            ? 0
-            : min(monitor.focusedIndices[workspaceIndex], tracked.count - 1)
+        let focusedIndex = monitor.clampedFocus(in: workspaceIndex)
         let windows = tracked.enumerated().map { windowIndex, window in
             let labels = window.displayLabels()
             return GlanceWindow(
@@ -229,7 +227,7 @@ private struct GlanceState {
             )
         }
 
-        let monitorLabel = ws.monitors.count > 1 ? "Monitor \(ws.focusedMonitorIndex + 1)" : nil
+        let monitorLabel = ws.focusedMonitorLabel
         return GlanceState(
             screen: monitor.screen,
             monitorLabel: monitorLabel,

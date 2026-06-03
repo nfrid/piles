@@ -17,46 +17,38 @@ package enum ActionDispatcher {
                 }
             }
         case .switchTo(let index):
-            onMain { WorkspaceManager.shared.switchTo(index) }
+            MainThread.run { WorkspaceManager.shared.switchTo(index) }
         case .moveActiveWindowAndSwitchTo(let index):
-            onMain { WorkspaceManager.shared.moveActiveWindowAndSwitchTo(index) }
+            MainThread.run { WorkspaceManager.shared.moveActiveWindowAndSwitchTo(index) }
         case .focusMonitor(let offset):
-            onMain { WorkspaceManager.shared.focusMonitor(offset: offset) }
+            MainThread.run { WorkspaceManager.shared.focusMonitor(offset: offset) }
         case .moveWindowToMonitor(let offset):
-            onMain { WorkspaceManager.shared.moveWindowToMonitor(offset: offset) }
+            MainThread.run { WorkspaceManager.shared.moveWindowToMonitor(offset: offset) }
         case .switchToOccupied(let offset, let movingFocusedWindow):
-            onMain {
+            MainThread.run {
                 WorkspaceManager.shared.switchToOccupied(
                     offset: offset,
                     movingFocusedWindow: movingFocusedWindow
                 )
             }
         case .switchToLast:
-            onMain { WorkspaceManager.shared.switchToLast() }
+            MainThread.run { WorkspaceManager.shared.switchToLast() }
         case .focusNext:
-            onMain { WorkspaceManager.shared.focusNext() }
+            MainThread.run { WorkspaceManager.shared.focusNext() }
         case .focusPrev:
-            onMain { WorkspaceManager.shared.focusPrev() }
+            MainThread.run { WorkspaceManager.shared.focusPrev() }
         case .moveFocusedWindowNext:
-            onMain { WorkspaceManager.shared.moveFocusedWindowNext() }
+            MainThread.run { WorkspaceManager.shared.moveFocusedWindowNext() }
         case .moveFocusedWindowPrev:
-            onMain { WorkspaceManager.shared.moveFocusedWindowPrev() }
+            MainThread.run { WorkspaceManager.shared.moveFocusedWindowPrev() }
         case .swapMaster:
-            onMain { WorkspaceManager.shared.swapMaster() }
+            MainThread.run { WorkspaceManager.shared.swapMaster() }
         case .toggleLayout:
-            onMain { WorkspaceManager.shared.toggleLayout() }
+            MainThread.run { WorkspaceManager.shared.toggleLayout() }
         case .toggleWorkspaceOverview:
-            onMain { WorkspaceOverview.shared.toggle() }
+            MainThread.run { WorkspaceOverview.shared.toggle() }
         case .toggleWorkspaceGlance:
-            onMain { WorkspaceGlance.shared.toggle() }
-        }
-    }
-
-    private static func onMain(_ work: @escaping () -> Void) {
-        if Thread.isMainThread {
-            work()
-        } else {
-            DispatchQueue.main.async(execute: work)
+            MainThread.run { WorkspaceGlance.shared.toggle() }
         }
     }
 }

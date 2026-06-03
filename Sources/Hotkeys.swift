@@ -127,7 +127,7 @@ package final class Hotkeys {
         let flags = event.flags
         if type == .flagsChanged {
             let optionHeld = flags.contains(.maskAlternate)
-            DispatchQueue.main.async {
+            MainThread.run {
                 MonocleBar.shared.setOptionHeld(optionHeld)
             }
             return passThrough(event)
@@ -143,7 +143,7 @@ package final class Hotkeys {
 
         if type == .leftMouseUp, Hotkeys.shared.resizingMasterRatio {
             Hotkeys.shared.resizingMasterRatio = false
-            DispatchQueue.main.async {
+            MainThread.run {
                 WorkspaceManager.shared.resizeMasterRatio(at: event.location)
             }
             return nil
@@ -159,7 +159,7 @@ package final class Hotkeys {
         }
 
         if type == .leftMouseDown {
-            let started = onMain {
+            let started = MainThread.runSync {
                 WorkspaceManager.shared.canResizeMasterRatio(at: event.location)
             }
             Hotkeys.shared.resizingMasterRatio = started
@@ -168,7 +168,7 @@ package final class Hotkeys {
 
         if type == .leftMouseDragged {
             guard Hotkeys.shared.resizingMasterRatio else { return passThrough(event) }
-            DispatchQueue.main.async {
+            MainThread.run {
                 WorkspaceManager.shared.resizeMasterRatio(at: event.location)
             }
             return nil
@@ -190,18 +190,10 @@ package final class Hotkeys {
         case .passThrough:
             return Self.passThrough(event)
         default:
-            DispatchQueue.main.async {
+            MainThread.run {
                 ActionDispatcher.perform(action)
             }
             return nil
         }
-    }
-
-    private static func onMain<T>(_ work: @escaping () -> T) -> T {
-        if Thread.isMainThread {
-            return work()
-        }
-
-        return DispatchQueue.main.sync(execute: work)
     }
 }
