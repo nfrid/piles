@@ -63,7 +63,12 @@ package final class StatusBar: NSObject {
         let fontSize = font.pointSize
 
         guard !ws.monitors.isEmpty else {
-            views.append(BadgeView(workspaceIndex: 0, number: 1, fontSize: fontSize, active: true))
+            views.append(BadgeView(
+                workspaceIndex: 0,
+                fontSize: fontSize,
+                active: true,
+                accentColor: state.appearance.uiStyle(forWorkspace: 0).accent
+            ))
             applyViews(views)
             return
         }
@@ -72,7 +77,11 @@ package final class StatusBar: NSObject {
 
         if ws.monitors.count > 1 {
             let monitorNumber = ws.focusedMonitorIndex + 1
-            views.append(LayoutIndicatorView(text: "\(monitorNumber):", fontSize: fontSize))
+            views.append(LayoutIndicatorView(
+                text: "\(monitorNumber):",
+                fontSize: fontSize,
+                accentColor: state.appearance.accent.primary
+            ))
         }
 
         for i in 0..<Config.shared.workspaceCount {
@@ -81,11 +90,21 @@ package final class StatusBar: NSObject {
 
             guard isActive || hasWindows else { continue }
 
-            views.append(BadgeView(workspaceIndex: i, number: i + 1, fontSize: fontSize, active: isActive))
+            views.append(BadgeView(
+                workspaceIndex: i,
+                fontSize: fontSize,
+                active: isActive,
+                accentColor: state.appearance.uiStyle(forWorkspace: i).accent
+            ))
         }
 
         if views.isEmpty {
-            views.append(BadgeView(workspaceIndex: 0, number: 1, fontSize: fontSize, active: true))
+            views.append(BadgeView(
+                workspaceIndex: 0,
+                fontSize: fontSize,
+                active: true,
+                accentColor: state.appearance.uiStyle(forWorkspace: 0).accent
+            ))
         }
 
         applyViews(views)
@@ -121,12 +140,6 @@ package final class StatusBar: NSObject {
     }
 }
 
-private let badgeColor = NSColor(name: nil) { appearance in
-    appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        ? NSColor(red: 230/255, green: 230/255, blue: 235/255, alpha: 1)
-        : NSColor(red: 26/255, green: 34/255, blue: 37/255, alpha: 1)
-}
-
 private func drawCenteredText(_ text: String, in bounds: NSRect, fontSize: CGFloat, color: NSColor, ctx: CGContext) {
     let font = NSFont.systemFont(ofSize: fontSize - 1)
     let str = NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: color])
@@ -140,13 +153,15 @@ private func drawCenteredText(_ text: String, in bounds: NSRect, fontSize: CGFlo
 
 private final class BadgeView: NSView {
     private let workspaceIndex: Int
-    private let number: Int
+    private let label: String
+    private let accentColor: NSColor
     private let fontSize: CGFloat
     private let active: Bool
 
-    init(workspaceIndex: Int, number: Int, fontSize: CGFloat, active: Bool) {
+    init(workspaceIndex: Int, fontSize: CGFloat, active: Bool, accentColor: NSColor) {
         self.workspaceIndex = workspaceIndex
-        self.number = number
+        self.label = "\(workspaceIndex + 1)"
+        self.accentColor = accentColor
         self.fontSize = fontSize
         self.active = active
         super.init(frame: .zero)
@@ -195,21 +210,22 @@ private final class BadgeView: NSView {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
         let rect = bounds.insetBy(dx: 0.5, dy: 0.5)
         let path = CGPath(roundedRect: rect, cornerWidth: 3, cornerHeight: 3, transform: nil)
+        let fillColor = accentColor
 
         ctx.addPath(path)
         let textColor: NSColor
         if active {
-            ctx.setFillColor(badgeColor.cgColor)
+            ctx.setFillColor(fillColor.cgColor)
             ctx.fillPath()
             ctx.setBlendMode(.destinationOut)
-            textColor = .black
+            textColor = fillColor.contrastingTextColor
         } else {
-            ctx.setStrokeColor(badgeColor.cgColor)
+            ctx.setStrokeColor(fillColor.cgColor)
             ctx.setLineWidth(1)
             ctx.strokePath()
-            textColor = badgeColor
+            textColor = fillColor
         }
-        drawCenteredText("\(number)", in: bounds, fontSize: fontSize, color: textColor, ctx: ctx)
+        drawCenteredText(label, in: bounds, fontSize: fontSize, color: textColor, ctx: ctx)
     }
 }
 
@@ -218,12 +234,14 @@ private struct StatusState: Equatable {
     let focusedMonitorIndex: Int
     let activeWorkspace: Int
     let occupiedWorkspaces: [Bool]
+    let appearance: AppearanceSnapshot
 
     static func capture(_ ws: WorkspaceManager) -> StatusState {
+        let appearance = Config.shared.appearanceSnapshot
         guard !ws.monitors.isEmpty else {
             return StatusState(
                 monitorCount: 0, focusedMonitorIndex: 0, activeWorkspace: 0,
-                occupiedWorkspaces: []
+                occupiedWorkspaces: [], appearance: appearance
             )
         }
         let monitor = ws.focusedMonitor
@@ -232,7 +250,8 @@ private struct StatusState: Equatable {
             monitorCount: ws.monitors.count,
             focusedMonitorIndex: ws.focusedMonitorIndex,
             activeWorkspace: monitor.active,
-            occupiedWorkspaces: occupied
+            occupiedWorkspaces: occupied,
+            appearance: appearance
         )
     }
 }
@@ -241,9 +260,12 @@ private final class LayoutIndicatorView: NSView {
     private let text: String
     private let fontSize: CGFloat
 
-    init(text: String, fontSize: CGFloat) {
+    private let accentColor: NSColor
+
+    init(text: String, fontSize: CGFloat, accentColor: NSColor) {
         self.text = text
         self.fontSize = fontSize
+        self.accentColor = accentColor
         super.init(frame: .zero)
         let font = NSFont.systemFont(ofSize: fontSize - 1)
         let str = NSAttributedString(string: text, attributes: [.font: font])
@@ -257,6 +279,6 @@ private final class LayoutIndicatorView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
-        drawCenteredText(text, in: bounds, fontSize: fontSize, color: badgeColor, ctx: ctx)
+        drawCenteredText(text, in: bounds, fontSize: fontSize, color: accentColor, ctx: ctx)
     }
 }

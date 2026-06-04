@@ -82,15 +82,15 @@ enum OverlayKeyInput {
 }
 
 enum SelectionCellStyle {
-    static func apply(to layer: CALayer?, selected: Bool, focused: Bool) {
+    static func apply(to layer: CALayer?, selected: Bool, focused: Bool, accent: NSColor) {
         if selected {
             layer?.borderWidth = 2
-            layer?.borderColor = NSColor.controlAccentColor.cgColor
-            layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.18).cgColor
+            layer?.borderColor = accent.cgColor
+            layer?.backgroundColor = accent.withAlphaComponent(0.18).cgColor
         } else if focused {
             layer?.borderWidth = 1
             layer?.borderColor = NSColor.white.withAlphaComponent(0.35).cgColor
-            layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.08).cgColor
+            layer?.backgroundColor = accent.withAlphaComponent(0.08).cgColor
         } else {
             layer?.borderWidth = 1
             layer?.borderColor = NSColor.white.withAlphaComponent(0.2).cgColor

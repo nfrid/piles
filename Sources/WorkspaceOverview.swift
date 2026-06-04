@@ -196,6 +196,7 @@ private struct OverviewRefreshFingerprint: Equatable {
     let focusedIndices: [Int]
     let monitorLabel: String?
     let visibleFrame: CGRect
+    let appearance: AppearanceSnapshot
 
     init(state: OverviewState) {
         activeWorkspace = state.activeWorkspace
@@ -204,6 +205,7 @@ private struct OverviewRefreshFingerprint: Equatable {
         focusedIndices = state.workspaces.map(\.focusedWindowIndex)
         monitorLabel = state.monitorLabel
         visibleFrame = state.screen.visibleFrame
+        appearance = state.appearance
     }
 }
 
@@ -212,6 +214,7 @@ private struct OverviewState {
     let monitorLabel: String?
     let workspaceCount: Int
     let activeWorkspace: Int
+    let appearance: AppearanceSnapshot
     let workspaces: [OverviewWorkspace]
 
     static func capture() -> OverviewState? {
@@ -219,6 +222,7 @@ private struct OverviewState {
         guard !ws.monitors.isEmpty else { return nil }
 
         let monitor = ws.focusedMonitor
+        let appearance = Config.shared.appearanceSnapshot
         let count = Config.shared.workspaceCount
         var workspaces: [OverviewWorkspace] = []
         workspaces.reserveCapacity(count)
@@ -236,7 +240,7 @@ private struct OverviewState {
             }
             workspaces.append(OverviewWorkspace(
                 index: index,
-                number: index + 1,
+                style: appearance.uiStyle(forWorkspace: index),
                 active: index == monitor.active,
                 occupied: !windows.isEmpty,
                 focusedWindowIndex: focusedIndex,
@@ -250,6 +254,7 @@ private struct OverviewState {
             monitorLabel: monitorLabel,
             workspaceCount: count,
             activeWorkspace: monitor.active,
+            appearance: appearance,
             workspaces: workspaces
         )
     }
@@ -257,7 +262,7 @@ private struct OverviewState {
 
 private struct OverviewWorkspace {
     let index: Int
-    let number: Int
+    let style: WorkspaceUIStyle
     let active: Bool
     let occupied: Bool
     let focusedWindowIndex: Int
@@ -371,7 +376,12 @@ private final class OverviewWorkspaceCell: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = OverlayMetrics.cellCornerRadius
-        SelectionCellStyle.apply(to: layer, selected: selected, focused: workspace.active)
+        SelectionCellStyle.apply(
+            to: layer,
+            selected: selected,
+            focused: workspace.active,
+            accent: workspace.style.accent
+        )
 
         let document = OverlayFlippedDocumentView()
         document.translatesAutoresizingMaskIntoConstraints = false
@@ -410,6 +420,7 @@ private final class OverviewWorkspaceCell: NSView {
                     title: window.title,
                     icon: window.icon,
                     selected: rowSelected || window.focused,
+                    accentColor: workspace.style.accent,
                     action: { onSelectWindow(index) }
                 )
                 windowList.addArrangedSubview(row)
@@ -432,9 +443,9 @@ private final class OverviewWorkspaceCell: NSView {
 
         content.addArrangedSubview(OverlayClickStrip(action: onSelectWorkspace) {
             OverlayLabel(
-                text: "\(workspace.number)",
+                text: workspace.style.displayName,
                 font: .systemFont(ofSize: OverviewMetrics.headerFontSize, weight: .bold),
-                color: selected ? .controlAccentColor : .labelColor
+                color: workspace.style.accent
             )
         })
         content.addArrangedSubview(windowScrollView)
@@ -509,7 +520,13 @@ private final class OverviewWorkspaceCell: NSView {
 private final class OverviewWindowRow: NSView {
     private let action: () -> Void
 
-    init(title: String, icon: NSImage, selected: Bool, action: @escaping () -> Void) {
+    init(
+        title: String,
+        icon: NSImage,
+        selected: Bool,
+        accentColor: NSColor,
+        action: @escaping () -> Void
+    ) {
         self.action = action
         super.init(frame: .zero)
         clipsToBounds = true
@@ -525,7 +542,7 @@ private final class OverviewWindowRow: NSView {
         let label = OverlayLabel(
             text: title,
             font: .systemFont(ofSize: OverviewMetrics.bodyFontSize, weight: selected ? .semibold : .regular),
-            color: selected ? .controlAccentColor : .secondaryLabelColor
+            color: selected ? accentColor : .secondaryLabelColor
         )
 
         let content = NSStackView(views: [iconView, label])

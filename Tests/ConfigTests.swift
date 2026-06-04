@@ -17,6 +17,35 @@ enum ConfigTests {
 
         do {
             Config.load(text: """
+            accent_color = "teal"
+
+            workspace_count = 3
+
+            [[workspace]]
+            index = 1
+            name = "Code"
+            color = "#5AC8FA"
+
+            [[workspace]]
+            index = 3
+            name = "Comms"
+            color = "orange"
+            """)
+
+            check(Config.shared.accent.colorHex == "#30B0C7", "loads accent color")
+            check(Config.shared.accent.primary == ConfigColorParser.color(fromHex: "#30B0C7"), "resolves accent primary")
+            let appearance = Config.shared.appearanceSnapshot
+            check(appearance.workspaces.count == 3, "sizes workspace appearances to workspace count")
+            check(appearance.workspace(at: 0).name == "Code", "loads workspace name")
+            check(appearance.workspace(at: 0).colorHex == "#5AC8FA", "loads workspace hex color")
+            check(appearance.workspace(at: 1).name == nil, "leaves unnamed workspaces empty")
+            check(appearance.workspace(at: 2).colorHex == "#FF9500", "loads named workspace color")
+            check(appearance.uiStyle(forWorkspace: 2).displayName == "Comms", "uses configured display name")
+            check(appearance.uiStyle(forWorkspace: 1).displayName == "Workspace 2", "falls back to numbered display name")
+        }
+
+        do {
+            Config.load(text: """
             workspace_count = 4
             master_ratio = 0.6
             default_layout = "tile"
@@ -103,6 +132,49 @@ enum ConfigTests {
             check(diagnostics.contains("unknown key 'notakey' for binding 'focus_next'"), "captures binding diagnostic")
             check(diagnostics.contains("unknown key 'shift+nope' in custom binding"), "captures custom binding diagnostic")
             check(diagnostics.contains("assignment needs app, bundle_id, title, or title_contains"), "captures assignment diagnostic")
+        }
+
+        do {
+            var invalidIndexDiagnostics: [String] = []
+            _ = ConfigParser.parse(text: """
+            workspace_count = 2
+
+            [[workspace]]
+            index = 9
+            """) { invalidIndexDiagnostics.append($0) }
+            check(
+                invalidIndexDiagnostics.contains(where: { $0.contains("workspace entry needs index") }),
+                "captures invalid workspace index diagnostic"
+            )
+            check(
+                !invalidIndexDiagnostics.contains(where: { $0.contains("assignment workspace") }),
+                "workspace index errors do not use assignment diagnostics"
+            )
+
+            var invalidColorDiagnostics: [String] = []
+            let config = ConfigParser.parse(text: """
+            workspace_count = 2
+
+            [[workspace]]
+            index = 1
+            color = "not-a-color"
+            """) { invalidColorDiagnostics.append($0) }
+
+            check(config?.workspaceAppearances.count == 2, "keeps workspace appearance array on invalid color")
+            check(
+                invalidColorDiagnostics.contains(where: { $0.contains("invalid workspace color") }),
+                "captures invalid workspace color diagnostic"
+            )
+
+            var invalidAccentDiagnostics: [String] = []
+            let accentConfig = ConfigParser.parse(text: """
+            accent_color = "not-a-color"
+            """) { invalidAccentDiagnostics.append($0) }
+            check(accentConfig?.accent.colorHex == nil, "rejects invalid accent color")
+            check(
+                invalidAccentDiagnostics.contains(where: { $0.contains("invalid accent_color") }),
+                "captures invalid accent color diagnostic"
+            )
         }
 
         do {

@@ -202,6 +202,7 @@ private struct GlanceRefreshFingerprint: Equatable {
     let focusedWindowIndex: Int
     let monitorLabel: String?
     let visibleFrame: CGRect
+    let appearance: AppearanceSnapshot
 
     init(state: GlanceState) {
         workspaceIndex = state.workspaceIndex
@@ -209,6 +210,7 @@ private struct GlanceRefreshFingerprint: Equatable {
         focusedWindowIndex = state.focusedWindowIndex
         monitorLabel = state.monitorLabel
         visibleFrame = state.screen.visibleFrame
+        appearance = state.appearance
     }
 }
 
@@ -216,9 +218,13 @@ private struct GlanceState {
     let screen: NSScreen
     let monitorLabel: String?
     let workspaceIndex: Int
-    let workspaceNumber: Int
+    let appearance: AppearanceSnapshot
     let windows: [GlanceWindow]
     let focusedWindowIndex: Int
+
+    var workspaceStyle: WorkspaceUIStyle {
+        appearance.uiStyle(forWorkspace: workspaceIndex)
+    }
 
     static func capture(workspaceIndex: Int? = nil) -> GlanceState? {
         let ws = WorkspaceManager.shared
@@ -240,12 +246,13 @@ private struct GlanceState {
             )
         }
 
+        let appearance = Config.shared.appearanceSnapshot
         let monitorLabel = ws.focusedMonitorLabel
         return GlanceState(
             screen: monitor.screen,
             monitorLabel: monitorLabel,
             workspaceIndex: workspaceIndex,
-            workspaceNumber: workspaceIndex + 1,
+            appearance: appearance,
             windows: windows,
             focusedWindowIndex: focusedIndex
         )
@@ -278,6 +285,8 @@ private final class GlanceCardView: NSVisualEffectView {
         hint.font = .systemFont(ofSize: OverlayMetrics.hintFontSize, weight: .medium)
         hint.textColor = .tertiaryLabelColor
 
+        let style = state.workspaceStyle
+
         let grid: NSView
         if state.windows.isEmpty {
             grid = GlanceEmptyView()
@@ -286,6 +295,7 @@ private final class GlanceCardView: NSVisualEffectView {
                 GlanceWindowCell(
                     window: window,
                     selected: index == selectedWindow,
+                    accentColor: style.accent,
                     onSelect: { onSelectWindow(index) }
                 )
             }
@@ -304,9 +314,9 @@ private final class GlanceCardView: NSVisualEffectView {
         header.translatesAutoresizingMaskIntoConstraints = false
         grid.translatesAutoresizingMaskIntoConstraints = false
 
-        let title = NSTextField(labelWithString: "Workspace \(state.workspaceNumber)")
+        let title = NSTextField(labelWithString: style.displayName)
         title.font = .systemFont(ofSize: GlanceMetrics.headerFontSize, weight: .bold)
-        title.textColor = .labelColor
+        title.textColor = style.accent
         header.addArrangedSubview(title)
 
         if let monitorLabel = state.monitorLabel {
@@ -365,20 +375,25 @@ private final class GlanceWindowCell: NSView {
     private let content: NSStackView
     private var lastCellHeight: CGFloat = 0
 
-    init(window: GlanceWindow, selected: Bool, onSelect: @escaping () -> Void) {
+    init(
+        window: GlanceWindow,
+        selected: Bool,
+        accentColor: NSColor,
+        onSelect: @escaping () -> Void
+    ) {
         self.onSelect = onSelect
         self.selected = selected
         appLabel = OverlayLabel(
             text: window.appName,
             font: .systemFont(ofSize: GlanceMetrics.bodyFontSize, weight: .semibold),
-            color: selected ? .controlAccentColor : .labelColor,
+            color: selected ? accentColor : .labelColor,
             maximumNumberOfLines: 1,
             alignment: .center
         )
         titleLabel = OverlayLabel(
             text: window.windowTitle,
             font: .systemFont(ofSize: OverlayMetrics.hintFontSize, weight: selected ? .medium : .regular),
-            color: selected ? .controlAccentColor : .secondaryLabelColor,
+            color: selected ? accentColor : .secondaryLabelColor,
             maximumNumberOfLines: 2,
             alignment: .center,
             wraps: true
@@ -391,7 +406,12 @@ private final class GlanceWindowCell: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = OverlayMetrics.cellCornerRadius
-        SelectionCellStyle.apply(to: layer, selected: selected, focused: window.focused)
+        SelectionCellStyle.apply(
+            to: layer,
+            selected: selected,
+            focused: window.focused,
+            accent: accentColor
+        )
 
         iconView.image = window.icon
         iconView.imageScaling = .scaleProportionallyUpOrDown

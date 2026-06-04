@@ -4,6 +4,23 @@
 # number of workspaces (1-9)
 # workspace_count = 9
 
+# global UI accent (overlays, menu bar badges, monocle bar); hex or named color
+# when unset, piles uses a neutral gray instead of the system blue accent
+# accent_color = "purple"
+# accent_color = "#AF52DE"
+
+# optional per-workspace name and color for the menu bar, overview, and glance UI
+# index is 1-based; color is a hex value (#RGB, #RRGGBB) or a named color
+# [[workspace]]
+# index = 1
+# name = "Code"
+# color = "#5AC8FA"   # quote hex values; bare # starts a TOML comment
+#
+# [[workspace]]
+# index = 2
+# name = "Web"
+# color = "orange"
+
 # master window width ratio (0.0-1.0)
 # master_ratio = 0.55
 

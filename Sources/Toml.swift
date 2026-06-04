@@ -16,7 +16,7 @@ package enum Toml {
         var currentArrayTable: String?
 
         for (lineNumber, raw) in text.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
-            let line = raw.prefix(while: { $0 != "#" })
+            let line = stripComment(raw)
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.isEmpty { continue }
 
@@ -71,6 +71,29 @@ package enum Toml {
         }
 
         return root
+    }
+
+    private static func stripComment(_ raw: Substring) -> Substring {
+        var inString = false
+        var escaped = false
+        for (offset, char) in raw.enumerated() {
+            if escaped {
+                escaped = false
+                continue
+            }
+            if char == "\\", inString {
+                escaped = true
+                continue
+            }
+            if char == "\"" {
+                inString.toggle()
+                continue
+            }
+            if char == "#", !inString {
+                return raw[..<raw.index(raw.startIndex, offsetBy: offset)]
+            }
+        }
+        return raw
     }
 
     private static func parseValue(_ s: String, line: Int) throws -> Any {

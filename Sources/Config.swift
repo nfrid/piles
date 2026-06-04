@@ -185,6 +185,8 @@ package struct Config {
         Binding(key: Key.return, shift: true, command: "open -n -a Terminal"),
     ]
     package var assignments: [WindowAssignment] = []
+    package var workspaceAppearances: [WorkspaceAppearance] = []
+    package var accent = AccentPalette()
     package var bindings = BuiltinBindings()
     package var ipcEnabled: Bool = true
     package var ipcSocketPath: String = "~/.config/piles/socket"
@@ -263,6 +265,7 @@ package enum ConfigParser {
         applyMasterRatio(toml["master_ratio"], to: &config, diagnose: diagnose)
         applyDefaultLayout(toml["default_layout"], to: &config, diagnose: diagnose)
         applyModifier(toml["modifier"], to: &config, diagnose: diagnose)
+        applyAccentColor(toml["accent_color"], to: &config, diagnose: diagnose)
         applyIPC(toml, to: &config, diagnose: diagnose)
 
         if let bindings = toml["bindings"] as? [String: Any] {
@@ -281,7 +284,63 @@ package enum ConfigParser {
             )
         }
 
+        if let workspaces = toml["workspace"] as? [[String: Any]] {
+            config.workspaceAppearances = parseWorkspaces(
+                workspaces,
+                workspaceCount: config.workspaceCount,
+                diagnose: diagnose
+            )
+        } else {
+            config.workspaceAppearances = emptyWorkspaceAppearances(count: config.workspaceCount)
+        }
+
         return config
+    }
+
+    private static func emptyWorkspaceAppearances(count: Int) -> [WorkspaceAppearance] {
+        Array(repeating: .empty, count: count)
+    }
+
+    private static func parseWorkspaces(
+        _ entries: [[String: Any]],
+        workspaceCount: Int,
+        diagnose: DiagnosticSink
+    ) -> [WorkspaceAppearance] {
+        var appearances = Array(repeating: WorkspaceAppearance.empty, count: workspaceCount)
+
+        for entry in entries {
+            guard let index = workspaceIndex(
+                entry["index"],
+                max: workspaceCount,
+                diagnose: diagnose,
+                context: .workspaceEntry
+            ) else {
+                continue
+            }
+
+            var appearance = appearances[index - 1]
+
+            if let name = entry["name"] as? String {
+                let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.isEmpty {
+                    diagnose("workspace \(index) name must not be empty")
+                } else {
+                    appearance.name = trimmed
+                }
+            }
+
+            if let color = entry["color"] as? String {
+                if let hex = ConfigColorParser.parse(color) {
+                    appearance.colorHex = hex
+                } else {
+                    diagnose("invalid workspace color '\(color)' for workspace \(index)")
+                }
+            }
+
+            appearances[index - 1] = appearance
+        }
+
+        return appearances
     }
 
     private static func applyWorkspaceCount(_ value: Any?, to config: inout Config, diagnose: DiagnosticSink) {
@@ -309,6 +368,15 @@ package enum ConfigParser {
         case "tile": config.defaultLayout = .tile
         case "monocle": config.defaultLayout = .monocle
         default: diagnose("unknown default_layout '\(layout)', using monocle")
+        }
+    }
+
+    private static func applyAccentColor(_ value: Any?, to config: inout Config, diagnose: DiagnosticSink) {
+        guard let color = value as? String else { return }
+        if let hex = ConfigColorParser.parse(color) {
+            config.accent.colorHex = hex
+        } else {
+            diagnose("invalid accent_color '\(color)'")
         }
     }
 
@@ -367,7 +435,12 @@ package enum ConfigParser {
             }
 
             let monitor = positiveInt(entry["monitor"], name: "monitor", diagnose: diagnose)
-            let workspace = workspaceIndex(entry["workspace"], max: workspaceCount, diagnose: diagnose)
+            let workspace = workspaceIndex(
+                entry["workspace"],
+                max: workspaceCount,
+                diagnose: diagnose,
+                context: .assignment
+            )
             let position = positiveInt(entry["position"], name: "position", diagnose: diagnose)
 
             return WindowAssignment(
@@ -402,10 +475,30 @@ package enum ConfigParser {
         }
     }
 
-    private static func workspaceIndex(_ value: Any?, max: Int, diagnose: DiagnosticSink) -> Int? {
-        guard let workspace = value as? Int else { return nil }
+    private enum WorkspaceIndexContext {
+        case assignment
+        case workspaceEntry
+    }
+
+    private static func workspaceIndex(
+        _ value: Any?,
+        max: Int,
+        diagnose: DiagnosticSink,
+        context: WorkspaceIndexContext
+    ) -> Int? {
+        guard let workspace = value as? Int else {
+            if case .workspaceEntry = context {
+                diagnose("workspace entry needs index between 1 and \(max)")
+            }
+            return nil
+        }
         guard workspace >= 1, workspace <= max else {
-            diagnose("assignment workspace must be between 1 and \(max)")
+            switch context {
+            case .assignment:
+                diagnose("assignment workspace must be between 1 and \(max)")
+            case .workspaceEntry:
+                diagnose("workspace entry needs index between 1 and \(max)")
+            }
             return nil
         }
         return workspace

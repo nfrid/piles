@@ -40,7 +40,12 @@ package final class MonocleBar {
         lastState = state
 
         let panel = panel(for: state.displayID)
-        panel.contentView = MonocleBarView(items: state.items, focusedIndex: state.focusedIndex)
+        let accent = state.appearance.uiStyle(forWorkspace: state.activeWorkspace).accent
+        panel.contentView = MonocleBarView(
+            items: state.items,
+            focusedIndex: state.focusedIndex,
+            accentColor: accent
+        )
         showPanel(displayID: state.displayID, screen: state.screen, contentWidth: state.contentWidth)
     }
 
@@ -133,30 +138,37 @@ private struct MonocleBarState: Equatable {
     let items: [MonocleBarItem]
     let focusedIndex: Int
     let contentWidth: CGFloat
+    let appearance: AppearanceSnapshot
+    let activeWorkspace: Int
 
     static func == (lhs: MonocleBarState, rhs: MonocleBarState) -> Bool {
         lhs.displayID == rhs.displayID
             && lhs.screen.visibleFrame == rhs.screen.visibleFrame
             && lhs.items == rhs.items
             && lhs.focusedIndex == rhs.focusedIndex
+            && lhs.appearance == rhs.appearance
     }
 
     static func capture(_ ws: WorkspaceManager) -> MonocleBarState? {
         guard !ws.monitors.isEmpty else { return nil }
         let monitor = ws.focusedMonitor
-        guard monitor.layouts[monitor.active] == .monocle else { return nil }
+        let activeWorkspace = monitor.active
+        guard monitor.layouts[activeWorkspace] == .monocle else { return nil }
 
-        let windows = monitor.workspaces[monitor.active]
+        let windows = monitor.workspaces[activeWorkspace]
         guard !windows.isEmpty else { return nil }
 
+        let appearance = Config.shared.appearanceSnapshot
         let items = windows.map { MonocleBarItem(title: $0.displayTitle()) }
-        let focusedIndex = monitor.clampedFocus(in: monitor.active)
+        let focusedIndex = monitor.clampedFocus(in: activeWorkspace)
         return MonocleBarState(
             displayID: monitor.displayID,
             screen: monitor.screen,
             items: items,
             focusedIndex: focusedIndex,
-            contentWidth: MonocleBarView.contentWidth(for: items)
+            contentWidth: MonocleBarView.contentWidth(for: items),
+            appearance: appearance,
+            activeWorkspace: activeWorkspace
         )
     }
 }
@@ -171,7 +183,7 @@ private final class MonocleBarView: NSVisualEffectView {
     private static let spacing: CGFloat = 6
     private static let inset: CGFloat = 7
 
-    init(items: [MonocleBarItem], focusedIndex: Int) {
+    init(items: [MonocleBarItem], focusedIndex: Int, accentColor: NSColor) {
         super.init(frame: .zero)
         material = .hudWindow
         blendingMode = .withinWindow
@@ -191,7 +203,11 @@ private final class MonocleBarView: NSVisualEffectView {
         stack.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         for index in items.indices {
-            stack.addArrangedSubview(MonocleBarItemView(item: items[index], focused: index == focusedIndex))
+            stack.addArrangedSubview(MonocleBarItemView(
+                item: items[index],
+                focused: index == focusedIndex,
+                accentColor: accentColor
+            ))
         }
 
         addSubview(stack)
@@ -222,7 +238,7 @@ private final class MonocleBarView: NSVisualEffectView {
 private final class MonocleBarItemView: NSView {
     private let focused: Bool
 
-    init(item: MonocleBarItem, focused: Bool) {
+    init(item: MonocleBarItem, focused: Bool, accentColor: NSColor) {
         self.focused = focused
         super.init(frame: .zero)
         setContentHuggingPriority(.required, for: .horizontal)
@@ -232,14 +248,14 @@ private final class MonocleBarItemView: NSView {
         layer?.borderWidth = focused ? 0 : 1
         layer?.borderColor = NSColor.white.withAlphaComponent(0.24).cgColor
         layer?.backgroundColor = focused
-            ? NSColor.white.withAlphaComponent(0.92).cgColor
+            ? accentColor.cgColor
             : NSColor.black.withAlphaComponent(0.18).cgColor
 
         let title = NSTextField(labelWithString: item.title)
         title.font = .systemFont(ofSize: 12, weight: .medium)
         title.lineBreakMode = .byTruncatingTail
         title.maximumNumberOfLines = 1
-        title.textColor = focused ? .black : .white.withAlphaComponent(0.88)
+        title.textColor = focused ? accentColor.contrastingTextColor : .white.withAlphaComponent(0.88)
         title.setContentHuggingPriority(.required, for: .horizontal)
         title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
