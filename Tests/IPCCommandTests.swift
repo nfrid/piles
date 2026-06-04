@@ -45,6 +45,7 @@ enum IPCCommandTests {
         resolves("glance", to: .toggleWorkspaceGlance)
         resolves("focus next", to: .focusNext)
         resolves("window move prev", to: .moveFocusedWindowPrev)
+        resolves("window close", to: .closeActiveWindow)
         resolves("layout toggle", to: .toggleLayout)
         resolves("master swap", to: .swapMaster)
         resolves("monitor focus next", to: .focusMonitor(1))

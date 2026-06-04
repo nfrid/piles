@@ -90,6 +90,7 @@ The default modifier is option. You can change it to `control` or `command` in
 | option+drag tile divider                 | resize the master area                                    |
 | option+o                                 | toggle workspace overview (all workspaces)                |
 | option+shift+o                           | toggle workspace glance (current workspace windows)       |
+| option+q                                 | close the focused window (app stays running)              |
 
 ## Config
 
@@ -162,7 +163,7 @@ piles-ctl workspace 3 --move
 ```
 
 Commands mirror hotkey actions: `workspace last`, `focus next|prev`,
-`window move next|prev`, `layout toggle`, `master swap`,
+`window move next|prev`, `window close`, `layout toggle`, `master swap`,
 `monitor focus next|prev`, `monitor move next|prev`.
 
 Disable or relocate the socket in config:

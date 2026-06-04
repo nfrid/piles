@@ -49,6 +49,8 @@ package enum ActionDispatcher {
             MainThread.run { WorkspaceOverview.shared.toggle() }
         case .toggleWorkspaceGlance:
             MainThread.run { WorkspaceGlance.shared.toggle() }
+        case .closeActiveWindow:
+            MainThread.run { WindowManager.closeFocusedWindow() }
         }
     }
 }

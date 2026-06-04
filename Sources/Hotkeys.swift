@@ -18,6 +18,7 @@ package enum HotkeyAction: Equatable {
     case toggleLayout
     case toggleWorkspaceOverview
     case toggleWorkspaceGlance
+    case closeActiveWindow
 }
 
 package struct HotkeyResolver {
@@ -64,6 +65,7 @@ package struct HotkeyResolver {
         if matches(keyCode, hasShift, b.toggleLayout) { return .toggleLayout }
         if matches(keyCode, hasShift, b.workspaceOverview) { return .toggleWorkspaceOverview }
         if matches(keyCode, hasShift, b.workspaceGlance) { return .toggleWorkspaceGlance }
+        if matches(keyCode, hasShift, b.closeActiveWindow) { return .closeActiveWindow }
 
         return .passThrough
     }

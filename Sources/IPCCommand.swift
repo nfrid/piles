@@ -111,16 +111,26 @@ package enum IPCCommandParser {
     }
 
     private static func parseWindow(_ parts: ArraySlice<String>) -> Result<HotkeyAction, ParseError> {
-        guard parts.count == 2,
-              parts.first?.lowercased() == "move",
-              let dir = parts.dropFirst().first?.lowercased()
-        else {
-            return .failure(.invalid("window expects: move next | move prev"))
+        guard let sub = parts.first?.lowercased() else {
+            return .failure(.invalid("window expects: close | move next | move prev"))
         }
-        switch dir {
-        case "next": return .success(.moveFocusedWindowNext)
-        case "prev": return .success(.moveFocusedWindowPrev)
-        default: return .failure(.invalid("window expects: move next | move prev"))
+        switch sub {
+        case "close":
+            guard parts.count == 1 else {
+                return .failure(.invalid("window close takes no arguments"))
+            }
+            return .success(.closeActiveWindow)
+        case "move":
+            guard parts.count == 2, let dir = parts.dropFirst().first?.lowercased() else {
+                return .failure(.invalid("window expects: move next | move prev"))
+            }
+            switch dir {
+            case "next": return .success(.moveFocusedWindowNext)
+            case "prev": return .success(.moveFocusedWindowPrev)
+            default: return .failure(.invalid("window expects: move next | move prev"))
+            }
+        default:
+            return .failure(.invalid("window expects: close | move next | move prev"))
         }
     }
 

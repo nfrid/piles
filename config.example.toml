@@ -36,6 +36,7 @@
 # last_workspace = "tab"
 # workspace_overview = "o"
 # workspace_glance = "shift+o"
+# close_active_window = "q"
 
 # custom key bindings that run shell commands
 # [[custom]]

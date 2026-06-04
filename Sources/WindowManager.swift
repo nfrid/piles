@@ -252,6 +252,18 @@ struct TrackedWindow: Equatable {
         AXClient.performAction(kAXRaiseAction as CFString, on: element, context: "pid=\(pid)")
     }
 
+    @discardableResult
+    func close() -> Bool {
+        if let closeButton = WindowManager.closeButton(of: element) {
+            return AXClient.performAction(
+                kAXPressAction as CFString,
+                on: closeButton,
+                context: "pid=\(pid) closeButton"
+            )
+        }
+        return AXClient.performAction("AXClose" as CFString, on: element, context: "pid=\(pid)")
+    }
+
     func isTileable() -> Bool {
         WindowManager.isTileable(element)
     }
@@ -438,6 +450,11 @@ enum WindowManager {
         return focusedWindow(pid: pid)
     }
 
+    @discardableResult
+    static func closeFocusedWindow() -> Bool {
+        focusedWindow()?.close() ?? false
+    }
+
     static func focusedWindow(pid: pid_t) -> TrackedWindow? {
         let appRef = AXUIElementCreateApplication(pid)
 
@@ -468,6 +485,10 @@ enum WindowManager {
 
     static func isStandardWindow(_ element: AXUIElement) -> Bool {
         attributes(of: element)?.isStandardWindow ?? false
+    }
+
+    static func closeButton(of element: AXUIElement) -> AXUIElement? {
+        axElementAttribute(element, kAXCloseButtonAttribute as CFString)
     }
 
     static func canonicalWindowElement(_ element: AXUIElement) -> AXUIElement? {

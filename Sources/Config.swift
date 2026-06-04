@@ -110,6 +110,7 @@ package struct BuiltinBindings {
     var lastWorkspace: (key: UInt16, shift: Bool) = (Key.tab, false)
     var workspaceOverview: (key: UInt16, shift: Bool) = (Key.o, false)
     var workspaceGlance: (key: UInt16, shift: Bool) = (Key.o, true)
+    var closeActiveWindow: (key: UInt16, shift: Bool) = (Key.q, false)
 }
 
 private typealias BuiltinBindingKeyPath = WritableKeyPath<BuiltinBindings, (key: UInt16, shift: Bool)>
@@ -130,6 +131,7 @@ private let builtinBindingKeys: [(name: String, keyPath: BuiltinBindingKeyPath)]
     ("last_workspace", \.lastWorkspace),
     ("workspace_overview", \.workspaceOverview),
     ("workspace_glance", \.workspaceGlance),
+    ("close_active_window", \.closeActiveWindow),
 ]
 
 package struct WindowAssignment {

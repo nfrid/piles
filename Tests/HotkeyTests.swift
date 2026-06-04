@@ -70,6 +70,10 @@ enum HotkeyTests {
             resolver.resolve(keyCode: Key.o, flags: [.maskAlternate, .maskShift], config: config) == .toggleWorkspaceGlance,
             "default workspace glance resolves"
         )
+        check(
+            resolver.resolve(keyCode: Key.q, flags: [.maskAlternate], config: config) == .closeActiveWindow,
+            "default close active window resolves"
+        )
 
         Hotkeys.shared.stop()
         Hotkeys.shared.stop()
