@@ -212,14 +212,18 @@ private final class BadgeView: NSView {
         let path = CGPath(roundedRect: rect, cornerWidth: 3, cornerHeight: 3, transform: nil)
         let fillColor = accentColor
 
-        ctx.addPath(path)
         let textColor: NSColor
         if active {
+            ctx.addPath(path)
             ctx.setFillColor(fillColor.cgColor)
             ctx.fillPath()
-            ctx.setBlendMode(.destinationOut)
+            ctx.addPath(path)
+            ctx.setStrokeColor(fillColor.cgColor)
+            ctx.setLineWidth(1)
+            ctx.strokePath()
             textColor = fillColor.contrastingTextColor
         } else {
+            ctx.addPath(path)
             ctx.setStrokeColor(fillColor.cgColor)
             ctx.setLineWidth(1)
             ctx.strokePath()
