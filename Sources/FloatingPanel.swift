@@ -38,8 +38,10 @@ enum FloatingPanel {
 }
 
 enum PanelAnimation {
-    static let overlayDuration: TimeInterval = 0.14
+    static let overlayDuration: TimeInterval = 0.10
     static let monocleDuration: TimeInterval = 0.12
+    static let hudFadeInDuration: TimeInterval = 0.05
+    static let hudFadeOutDuration: TimeInterval = 0.08
 
     static func run(
         duration: TimeInterval,
