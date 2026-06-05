@@ -168,11 +168,11 @@ private final class WorkspaceSwitchHUDView: NSVisualEffectView {
         blendingMode = .withinWindow
         self.state = .active
         wantsLayer = true
-        layer?.cornerRadius = 8
+        layer?.cornerRadius = OverlayMetrics.barCornerRadius
         layer?.masksToBounds = true
 
         accentBar.wantsLayer = true
-        accentBar.layer?.cornerRadius = 2
+        accentBar.layer?.cornerRadius = OverlayMetrics.accentStripCornerRadius
         accentBar.translatesAutoresizingMaskIntoConstraints = false
 
         titleLabel.font = .systemFont(ofSize: 14, weight: .semibold)

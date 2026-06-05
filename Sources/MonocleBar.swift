@@ -277,8 +277,8 @@ private final class MonocleBarView: NSVisualEffectView {
         blendingMode = .withinWindow
         state = .active
         wantsLayer = true
-        layer?.cornerRadius = 7
-        layer?.masksToBounds = false
+        layer?.cornerRadius = OverlayMetrics.barCornerRadius
+        layer?.masksToBounds = true
 
         stack.orientation = .horizontal
         stack.alignment = .centerY
@@ -523,7 +523,8 @@ private final class MonocleBarItemView: NSView {
         setContentHuggingPriority(.required, for: .horizontal)
         setContentCompressionResistancePriority(.required, for: .horizontal)
         wantsLayer = true
-        layer?.cornerRadius = 5
+        layer?.cornerRadius = OverlayMetrics.barItemCornerRadius
+        layer?.masksToBounds = true
         layer?.actions = [
             "position": NSNull(),
             "bounds": NSNull(),

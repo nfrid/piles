@@ -6,7 +6,10 @@ enum OverlayMetrics {
     static let hintFontSize: CGFloat = 12
     static let cardPadding: CGFloat = 16
     static let cardCornerRadius: CGFloat = 12
-    static let cellCornerRadius: CGFloat = 8
+    static let cellCornerRadius: CGFloat = 10
+    static let barCornerRadius: CGFloat = 8
+    static let barItemCornerRadius: CGFloat = 6
+    static let accentStripCornerRadius: CGFloat = 3
     static let gridSpacing: CGFloat = 10
 }
 

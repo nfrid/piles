@@ -432,6 +432,7 @@ private final class GlanceWindowCell: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = OverlayMetrics.cellCornerRadius
+        layer?.masksToBounds = true
         SelectionCellStyle.apply(
             to: layer,
             selected: selected,
