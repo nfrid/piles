@@ -7,6 +7,8 @@ package final class StatusBar: NSObject {
     private let menu: NSMenu
     private let stackView: NSStackView
     private var lastState: StatusState?
+    private var badgeViews: [Int: BadgeView] = [:]
+    private var indicatorView: LayoutIndicatorView?
 
     private override init() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -58,56 +60,57 @@ package final class StatusBar: NSObject {
         guard state != lastState else { return }
         lastState = state
 
-        var views: [NSView] = []
         let font = NSFont.menuBarFont(ofSize: 0)
         let fontSize = font.pointSize
 
-        guard !ws.monitors.isEmpty else {
-            views.append(BadgeView(
-                workspaceIndex: 0,
-                fontSize: fontSize,
-                active: true,
-                accentColor: state.appearance.uiStyle(forWorkspace: 0).accent
-            ))
-            applyViews(views)
-            return
+        var orderedViews: [NSView] = []
+
+        // Monitor indicator (only with multiple monitors)
+        if state.monitorCount > 1 {
+            let text = "\(state.focusedMonitorIndex + 1):"
+            let accent = state.appearance.accent.primary
+            if let existing = indicatorView {
+                existing.apply(text: text, accentColor: accent)
+                orderedViews.append(existing)
+            } else {
+                let v = LayoutIndicatorView(text: text, fontSize: fontSize, accentColor: accent)
+                indicatorView = v
+                orderedViews.append(v)
+            }
+        } else {
+            indicatorView = nil
         }
 
-        let monitor = ws.focusedMonitor
-
-        if ws.monitors.count > 1 {
-            let monitorNumber = ws.focusedMonitorIndex + 1
-            views.append(LayoutIndicatorView(
-                text: "\(monitorNumber):",
-                fontSize: fontSize,
-                accentColor: state.appearance.accent.primary
-            ))
+        // Workspace badges
+        var visibleIndices: [Int] = []
+        if state.monitorCount == 0 {
+            visibleIndices = [0]
+        } else {
+            for i in 0..<Config.shared.workspaceCount {
+                if i == state.activeWorkspace || state.occupiedWorkspaces.indices.contains(i) && state.occupiedWorkspaces[i] {
+                    visibleIndices.append(i)
+                }
+            }
+            if visibleIndices.isEmpty { visibleIndices = [0] }
         }
 
-        for i in 0..<Config.shared.workspaceCount {
-            let isActive = i == monitor.active
-            let hasWindows = !monitor.workspaces[i].isEmpty
-
-            guard isActive || hasWindows else { continue }
-
-            views.append(BadgeView(
-                workspaceIndex: i,
-                fontSize: fontSize,
-                active: isActive,
-                accentColor: state.appearance.uiStyle(forWorkspace: i).accent
-            ))
+        var newBadgeViews: [Int: BadgeView] = [:]
+        for i in visibleIndices {
+            let isActive = (state.monitorCount == 0) ? true : (i == state.activeWorkspace)
+            let accent = state.appearance.uiStyle(forWorkspace: i).accent
+            if let existing = badgeViews[i] {
+                existing.apply(active: isActive, accentColor: accent)
+                newBadgeViews[i] = existing
+                orderedViews.append(existing)
+            } else {
+                let v = BadgeView(workspaceIndex: i, fontSize: fontSize, active: isActive, accentColor: accent)
+                newBadgeViews[i] = v
+                orderedViews.append(v)
+            }
         }
+        badgeViews = newBadgeViews
 
-        if views.isEmpty {
-            views.append(BadgeView(
-                workspaceIndex: 0,
-                fontSize: fontSize,
-                active: true,
-                accentColor: state.appearance.uiStyle(forWorkspace: 0).accent
-            ))
-        }
-
-        applyViews(views)
+        applyViews(orderedViews)
     }
 
     private func installStackView() {
@@ -154,9 +157,9 @@ private func drawCenteredText(_ text: String, in bounds: NSRect, fontSize: CGFlo
 private final class BadgeView: NSView {
     private let workspaceIndex: Int
     private let label: String
-    private let accentColor: NSColor
     private let fontSize: CGFloat
-    private let active: Bool
+    private var accentColor: NSColor
+    private var active: Bool
 
     init(workspaceIndex: Int, fontSize: CGFloat, active: Bool, accentColor: NSColor) {
         self.workspaceIndex = workspaceIndex
@@ -172,6 +175,13 @@ private final class BadgeView: NSView {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
+
+    func apply(active: Bool, accentColor: NSColor) {
+        guard self.active != active || self.accentColor != accentColor else { return }
+        self.active = active
+        self.accentColor = accentColor
+        needsDisplay = true
+    }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -261,10 +271,9 @@ private struct StatusState: Equatable {
 }
 
 private final class LayoutIndicatorView: NSView {
-    private let text: String
+    private var text: String
     private let fontSize: CGFloat
-
-    private let accentColor: NSColor
+    private var accentColor: NSColor
 
     init(text: String, fontSize: CGFloat, accentColor: NSColor) {
         self.text = text
@@ -280,6 +289,13 @@ private final class LayoutIndicatorView: NSView {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
+
+    func apply(text: String, accentColor: NSColor) {
+        guard self.text != text || self.accentColor != accentColor else { return }
+        self.text = text
+        self.accentColor = accentColor
+        needsDisplay = true
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }

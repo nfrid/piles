@@ -17,6 +17,8 @@ package final class WorkspaceOverview: OverlaySessionHost {
     private var selectedWorkspace = 0
     private var selectedWindow = 0
     private var lastRefreshFingerprint: OverviewRefreshFingerprint?
+    private var liveCard: OverviewCardView?
+    private var liveRootView: OverlayRootView?
 
     private init() {}
 
@@ -62,6 +64,8 @@ package final class WorkspaceOverview: OverlaySessionHost {
 
     func overlayDidHide() {
         lastRefreshFingerprint = nil
+        liveCard = nil
+        liveRootView = nil
     }
 
     func overlayToggleBinding(_ config: Config) -> (key: UInt16, shift: Bool) {
@@ -128,7 +132,7 @@ package final class WorkspaceOverview: OverlaySessionHost {
         ) else { return }
 
         syncWindowSelection(from: state)
-        present(state: state, animated: false)
+        applySelectionIfPossible(state: state) ?? present(state: state, animated: false)
     }
 
     private func moveWorkspaceRow(_ delta: Int) {
@@ -140,7 +144,16 @@ package final class WorkspaceOverview: OverlaySessionHost {
         ) else { return }
 
         syncWindowSelection(from: state)
-        present(state: state, animated: false)
+        applySelectionIfPossible(state: state) ?? present(state: state, animated: false)
+    }
+
+    @discardableResult
+    private func applySelectionIfPossible(state: OverviewState) -> Void? {
+        guard let card = liveCard else { return nil }
+        guard OverviewRefreshFingerprint(state: state) == lastRefreshFingerprint else { return nil }
+        let selection = OverviewSelection(workspace: selectedWorkspace, window: selectedWindow)
+        card.applySelection(selection, appearance: state.appearance)
+        return ()
     }
 
     private func confirmSelection() {
@@ -162,25 +175,26 @@ package final class WorkspaceOverview: OverlaySessionHost {
 
     private func present(state: OverviewState, animated: Bool = true) {
         let selection = OverviewSelection(workspace: selectedWorkspace, window: selectedWindow)
-        let contentView = OverlayRootView(
-            screen: state.screen,
-            card: OverviewCardView(
-                overviewState: state,
-                selection: selection,
-                onSelectWorkspace: { [weak self] index in
-                    self?.activate(workspaceIndex: index, windowIndex: nil)
-                    self?.hide()
-                },
-                onSelectWindow: { [weak self] workspaceIndex, windowIndex in
-                    self?.activate(workspaceIndex: workspaceIndex, windowIndex: windowIndex)
-                    self?.hide()
-                }
-            ),
-            onDismiss: { [weak self] in
+        let card = OverviewCardView(
+            overviewState: state,
+            selection: selection,
+            onSelectWorkspace: { [weak self] index in
+                self?.activate(workspaceIndex: index, windowIndex: nil)
+                self?.hide()
+            },
+            onSelectWindow: { [weak self] workspaceIndex, windowIndex in
+                self?.activate(workspaceIndex: workspaceIndex, windowIndex: windowIndex)
                 self?.hide()
             }
         )
-        session.present(contentView: contentView, on: state.screen, animated: animated)
+        let rootView = OverlayRootView(
+            screen: state.screen,
+            card: card,
+            onDismiss: { [weak self] in self?.hide() }
+        )
+        liveCard = card
+        liveRootView = rootView
+        session.present(contentView: rootView, on: state.screen, animated: animated)
     }
 }
 
@@ -277,6 +291,18 @@ private struct OverviewWindow {
 }
 
 private final class OverviewCardView: NSVisualEffectView {
+    private var workspaceCells: [(index: Int, cell: OverviewWorkspaceCell)] = []
+
+    func applySelection(_ selection: OverviewSelection, appearance: AppearanceSnapshot) {
+        for (wsIndex, cell) in workspaceCells {
+            cell.applySelection(
+                workspaceSelected: wsIndex == selection.workspace,
+                selectedWindow: selection.window,
+                accent: appearance.uiStyle(forWorkspace: wsIndex).accent
+            )
+        }
+    }
+
     init(
         overviewState: OverviewState,
         selection: OverviewSelection,
@@ -295,7 +321,7 @@ private final class OverviewCardView: NSVisualEffectView {
         hint.font = .systemFont(ofSize: OverlayMetrics.hintFontSize, weight: .medium)
         hint.textColor = .tertiaryLabelColor
 
-        let grid = OverlayGridView(cells: overviewState.workspaces.map { workspace in
+        let cells = overviewState.workspaces.map { workspace in
             OverviewWorkspaceCell(
                 workspace: workspace,
                 selected: workspace.index == selection.workspace,
@@ -303,7 +329,9 @@ private final class OverviewCardView: NSVisualEffectView {
                 onSelectWorkspace: { onSelectWorkspace(workspace.index) },
                 onSelectWindow: { onSelectWindow(workspace.index, $0) }
             )
-        })
+        }
+        workspaceCells = zip(overviewState.workspaces.map(\.index), cells).map { ($0, $1) }
+        let grid = OverlayGridView(cells: cells)
 
         let padding = OverlayMetrics.cardPadding
         let header = NSStackView()
@@ -339,10 +367,36 @@ private final class OverviewCardView: NSVisualEffectView {
 
 private final class OverviewWorkspaceCell: NSView {
     private let onSelectWorkspace: () -> Void
-    private let workspaceSelected: Bool
-    private let selectedWindow: Int
+    private var workspaceSelected: Bool
+    private var selectedWindow: Int
     private let windowScrollView: NSScrollView
     private let windowList: NSStackView
+    private let workspace: OverviewWorkspace
+
+    func applySelection(workspaceSelected: Bool, selectedWindow: Int, accent: NSColor) {
+        let changed = self.workspaceSelected != workspaceSelected || self.selectedWindow != selectedWindow
+        self.workspaceSelected = workspaceSelected
+        self.selectedWindow = selectedWindow
+        guard changed else { return }
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.1
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            context.allowsImplicitAnimation = true
+            SelectionCellStyle.apply(to: layer, selected: workspaceSelected, focused: workspace.active, accent: accent)
+        }
+
+        for (i, row) in windowList.arrangedSubviews.compactMap({ $0 as? OverviewWindowRow }).enumerated() {
+            let rowSelected = workspaceSelected && i == selectedWindow
+            row.applySelected(rowSelected || workspace.windows.indices.contains(i) && workspace.windows[i].focused, accentColor: accent)
+        }
+
+        if workspaceSelected {
+            setNeedsDisplay(bounds)
+            layoutSubtreeIfNeeded()
+            scrollToSelectedWindow()
+        }
+    }
 
     init(
         workspace: OverviewWorkspace,
@@ -354,6 +408,7 @@ private final class OverviewWorkspaceCell: NSView {
         self.onSelectWorkspace = onSelectWorkspace
         self.workspaceSelected = selected
         self.selectedWindow = selectedWindow
+        self.workspace = workspace
 
         windowList = NSStackView()
         windowList.orientation = .vertical
@@ -519,6 +574,20 @@ private final class OverviewWorkspaceCell: NSView {
 
 private final class OverviewWindowRow: NSView {
     private let action: () -> Void
+    private let label: OverlayLabel
+    private var selected: Bool
+    private var accentColor: NSColor
+
+    func applySelected(_ newSelected: Bool, accentColor: NSColor) {
+        guard selected != newSelected || self.accentColor != accentColor else { return }
+        selected = newSelected
+        self.accentColor = accentColor
+        label.textColor = newSelected ? accentColor : .secondaryLabelColor
+        label.font = .systemFont(
+            ofSize: OverviewMetrics.bodyFontSize,
+            weight: newSelected ? .semibold : .regular
+        )
+    }
 
     init(
         title: String,
@@ -528,6 +597,13 @@ private final class OverviewWindowRow: NSView {
         action: @escaping () -> Void
     ) {
         self.action = action
+        self.selected = selected
+        self.accentColor = accentColor
+        self.label = OverlayLabel(
+            text: title,
+            font: .systemFont(ofSize: OverviewMetrics.bodyFontSize, weight: selected ? .semibold : .regular),
+            color: selected ? accentColor : .secondaryLabelColor
+        )
         super.init(frame: .zero)
         clipsToBounds = true
         setContentHuggingPriority(.required, for: .vertical)
@@ -538,12 +614,6 @@ private final class OverviewWindowRow: NSView {
         let iconView = OverlayIconView()
         iconView.image = icon
         iconView.imageScaling = .scaleProportionallyUpOrDown
-
-        let label = OverlayLabel(
-            text: title,
-            font: .systemFont(ofSize: OverviewMetrics.bodyFontSize, weight: selected ? .semibold : .regular),
-            color: selected ? accentColor : .secondaryLabelColor
-        )
 
         let content = NSStackView(views: [iconView, label])
         content.orientation = .horizontal

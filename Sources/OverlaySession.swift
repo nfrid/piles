@@ -121,4 +121,8 @@ final class OverlaySession {
     func present(contentView: NSView, on screen: NSScreen, animated: Bool) {
         panelController.present(contentView: contentView, on: screen, animated: animated)
     }
+
+    func updateContent(_ contentView: NSView) {
+        panelController.updateContent(contentView)
+    }
 }

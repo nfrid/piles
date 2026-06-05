@@ -120,6 +120,12 @@ final class OverlayPanelController {
         PanelAnimation.fadeIn(panel)
     }
 
+    /// Update content without animating or altering visibility.
+    func updateContent(_ contentView: NSView) {
+        guard let panel else { return }
+        panel.contentView = contentView
+    }
+
     func dismiss(ifStillHidden: @escaping () -> Bool) {
         guard let panel, panel.isVisible else {
             self.panel = nil

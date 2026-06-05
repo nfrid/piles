@@ -39,6 +39,8 @@ package final class WorkspaceGlance: OverlaySessionHost {
     private var viewedWorkspaceIndex: Int?
     private var pendingWindowIndex: Int?
     private var lastRefreshFingerprint: GlanceRefreshFingerprint?
+    private var liveCard: GlanceCardView?
+    private var liveRootView: OverlayRootView?
 
     private init() {}
 
@@ -98,6 +100,8 @@ package final class WorkspaceGlance: OverlaySessionHost {
         viewedWorkspaceIndex = nil
         pendingWindowIndex = nil
         lastRefreshFingerprint = nil
+        liveCard = nil
+        liveRootView = nil
     }
 
     func overlayToggleBinding(_ config: Config) -> (key: UInt16, shift: Bool) {
@@ -145,7 +149,7 @@ package final class WorkspaceGlance: OverlaySessionHost {
             count: state.windows.count
         ) else { return }
 
-        present(state: state, animated: false)
+        applySelectionIfPossible(state: state) ?? present(state: state, animated: false)
     }
 
     private func moveWindowRow(_ delta: Int) {
@@ -156,7 +160,15 @@ package final class WorkspaceGlance: OverlaySessionHost {
             count: state.windows.count
         ) else { return }
 
-        present(state: state, animated: false)
+        applySelectionIfPossible(state: state) ?? present(state: state, animated: false)
+    }
+
+    @discardableResult
+    private func applySelectionIfPossible(state: GlanceState) -> Void? {
+        guard let card = liveCard else { return nil }
+        guard GlanceRefreshFingerprint(state: state) == lastRefreshFingerprint else { return nil }
+        card.applySelection(selectedWindow: selectedWindow, accentColor: state.workspaceStyle.accent)
+        return ()
     }
 
     private func confirmSelection() {
@@ -174,21 +186,22 @@ package final class WorkspaceGlance: OverlaySessionHost {
     }
 
     private func present(state: GlanceState, animated: Bool = true) {
-        let contentView = OverlayRootView(
-            screen: state.screen,
-            card: GlanceCardView(
-                state: state,
-                selectedWindow: selectedWindow,
-                onSelectWindow: { [weak self] index in
-                    self?.activate(windowIndex: index)
-                    self?.hide()
-                }
-            ),
-            onDismiss: { [weak self] in
+        let card = GlanceCardView(
+            state: state,
+            selectedWindow: selectedWindow,
+            onSelectWindow: { [weak self] index in
+                self?.activate(windowIndex: index)
                 self?.hide()
             }
         )
-        session.present(contentView: contentView, on: state.screen, animated: animated)
+        let rootView = OverlayRootView(
+            screen: state.screen,
+            card: card,
+            onDismiss: { [weak self] in self?.hide() }
+        )
+        liveCard = card
+        liveRootView = rootView
+        session.present(contentView: rootView, on: state.screen, animated: animated)
     }
 
     private func captureState() -> GlanceState? {
@@ -268,6 +281,14 @@ private struct GlanceWindow {
 }
 
 private final class GlanceCardView: NSVisualEffectView {
+    private var cells: [GlanceWindowCell] = []
+
+    func applySelection(selectedWindow: Int, accentColor: NSColor) {
+        for (i, cell) in cells.enumerated() {
+            cell.applySelected(i == selectedWindow, accentColor: accentColor)
+        }
+    }
+
     init(
         state: GlanceState,
         selectedWindow: Int,
@@ -299,6 +320,7 @@ private final class GlanceCardView: NSVisualEffectView {
                     onSelect: { onSelectWindow(index) }
                 )
             }
+            cells = tiles
             let gridView = OverlayGridView(cells: tiles)
             gridView.onCellLayout = { index, cellHeight in
                 tiles[index].updateTypography(forCellHeight: cellHeight)
@@ -365,7 +387,9 @@ private final class GlanceEmptyView: NSView {
 
 private final class GlanceWindowCell: NSView {
     private let onSelect: () -> Void
-    private let selected: Bool
+    private var selected: Bool
+    private var accentColor: NSColor
+    private let glanceWindow: GlanceWindow
     private let appLabel: OverlayLabel
     private let titleLabel: OverlayLabel
     private let iconView: OverlayIconView
@@ -383,6 +407,8 @@ private final class GlanceWindowCell: NSView {
     ) {
         self.onSelect = onSelect
         self.selected = selected
+        self.accentColor = accentColor
+        self.glanceWindow = window
         appLabel = OverlayLabel(
             text: window.appName,
             font: .systemFont(ofSize: GlanceMetrics.bodyFontSize, weight: .semibold),
@@ -443,6 +469,27 @@ private final class GlanceWindowCell: NSView {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
+
+    func applySelected(_ newSelected: Bool, accentColor: NSColor) {
+        guard selected != newSelected || self.accentColor != accentColor else { return }
+        selected = newSelected
+        self.accentColor = accentColor
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.1
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            context.allowsImplicitAnimation = true
+            SelectionCellStyle.apply(to: layer, selected: newSelected, focused: glanceWindow.focused, accent: accentColor)
+        }
+        appLabel.textColor = newSelected ? accentColor : .labelColor
+        titleLabel.textColor = newSelected ? accentColor : .secondaryLabelColor
+        titleLabel.font = .systemFont(
+            ofSize: lastCellHeight > 0
+                ? GlanceMetrics.typography(forCellHeight: lastCellHeight).titleFontSize
+                : OverlayMetrics.hintFontSize,
+            weight: newSelected ? .medium : .regular
+        )
+    }
 
     func updateTypography(forCellHeight cellHeight: CGFloat) {
         guard abs(cellHeight - lastCellHeight) > 0.5 else { return }
