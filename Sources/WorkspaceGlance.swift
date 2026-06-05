@@ -39,6 +39,7 @@ package final class WorkspaceGlance: OverlaySessionHost {
     private var viewedWorkspaceIndex: Int?
     private var pendingWindowIndex: Int?
     private var lastRefreshFingerprint: GlanceRefreshFingerprint?
+    private var lastState: GlanceState?
     private var liveCard: GlanceCardView?
     private var liveRootView: OverlayRootView?
 
@@ -77,12 +78,16 @@ package final class WorkspaceGlance: OverlaySessionHost {
     }
 
     func overlayPresent(animated: Bool, refreshing: Bool) -> Bool {
-        guard let state = captureState() else { return false }
-        let fingerprint = GlanceRefreshFingerprint(state: state)
-        if refreshing, fingerprint == lastRefreshFingerprint {
+        if refreshing,
+           let fingerprint = GlanceRefreshFingerprint.capture(workspaceIndex: viewedWorkspaceIndex),
+           fingerprint == lastRefreshFingerprint {
             return true
         }
+
+        guard let state = captureState() else { return false }
+        let fingerprint = GlanceRefreshFingerprint(state: state)
         lastRefreshFingerprint = fingerprint
+        lastState = state
         if refreshing {
             clampSelection(to: state)
         } else if let pendingWindowIndex {
@@ -100,6 +105,7 @@ package final class WorkspaceGlance: OverlaySessionHost {
         viewedWorkspaceIndex = nil
         pendingWindowIndex = nil
         lastRefreshFingerprint = nil
+        lastState = nil
         liveCard = nil
         liveRootView = nil
     }
@@ -142,7 +148,7 @@ package final class WorkspaceGlance: OverlaySessionHost {
     }
 
     private func moveWindowHorizontal(_ delta: Int) {
-        guard let state = captureState() else { return }
+        guard let state = currentState() else { return }
         guard OverlayGridSelection.moveHorizontal(
             selected: &selectedWindow,
             delta: delta,
@@ -153,7 +159,7 @@ package final class WorkspaceGlance: OverlaySessionHost {
     }
 
     private func moveWindowRow(_ delta: Int) {
-        guard let state = captureState() else { return }
+        guard let state = currentState() else { return }
         guard OverlayGridSelection.moveRow(
             selected: &selectedWindow,
             delta: delta,
@@ -176,7 +182,7 @@ package final class WorkspaceGlance: OverlaySessionHost {
     }
 
     private func activate(windowIndex: Int) {
-        guard let state = captureState(),
+        guard let state = currentState(),
               state.windows.indices.contains(windowIndex)
         else { return }
         WorkspaceManager.shared.focusWindow(
@@ -207,6 +213,10 @@ package final class WorkspaceGlance: OverlaySessionHost {
     private func captureState() -> GlanceState? {
         GlanceState.capture(workspaceIndex: viewedWorkspaceIndex)
     }
+
+    private func currentState() -> GlanceState? {
+        lastState ?? captureState()
+    }
 }
 
 private struct GlanceRefreshFingerprint: Equatable {
@@ -224,6 +234,42 @@ private struct GlanceRefreshFingerprint: Equatable {
         workspaceIndex = state.workspaceIndex
         windowTokens = state.windows.map(\.identityToken)
         focusedWindowIndex = state.focusedWindowIndex
+    }
+
+    static func capture(workspaceIndex requestedWorkspaceIndex: Int? = nil) -> GlanceRefreshFingerprint? {
+        let ws = WorkspaceManager.shared
+        guard !ws.monitors.isEmpty else { return nil }
+
+        let monitor = ws.focusedMonitor
+        let workspaceIndex = requestedWorkspaceIndex ?? monitor.active
+        guard monitor.workspaces.indices.contains(workspaceIndex) else { return nil }
+
+        return GlanceRefreshFingerprint(
+            screen: monitor.screen,
+            monitorLabel: ws.focusedMonitorLabel,
+            appearance: Config.shared.appearanceSnapshot,
+            workspaceIndex: workspaceIndex,
+            windowTokens: monitor.workspaces[workspaceIndex].map(\.overlayIdentityToken),
+            focusedWindowIndex: monitor.clampedFocus(in: workspaceIndex)
+        )
+    }
+
+    private init(
+        screen: NSScreen,
+        monitorLabel: String?,
+        appearance: AppearanceSnapshot,
+        workspaceIndex: Int,
+        windowTokens: [Int],
+        focusedWindowIndex: Int
+    ) {
+        display = OverlayDisplayFingerprint(
+            monitorLabel: monitorLabel,
+            screen: screen,
+            appearance: appearance
+        )
+        self.workspaceIndex = workspaceIndex
+        self.windowTokens = windowTokens
+        self.focusedWindowIndex = focusedWindowIndex
     }
 }
 

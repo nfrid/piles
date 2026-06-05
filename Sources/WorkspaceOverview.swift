@@ -17,6 +17,7 @@ package final class WorkspaceOverview: OverlaySessionHost {
     private var selectedWorkspace = 0
     private var selectedWindow = 0
     private var lastRefreshFingerprint: OverviewRefreshFingerprint?
+    private var lastState: OverviewState?
     private var liveCard: OverviewCardView?
     private var liveRootView: OverlayRootView?
 
@@ -47,12 +48,16 @@ package final class WorkspaceOverview: OverlaySessionHost {
     }
 
     func overlayPresent(animated: Bool, refreshing: Bool) -> Bool {
-        guard let state = OverviewState.capture() else { return false }
-        let fingerprint = OverviewRefreshFingerprint(state: state)
-        if refreshing, fingerprint == lastRefreshFingerprint {
+        if refreshing,
+           let fingerprint = OverviewRefreshFingerprint.capture(),
+           fingerprint == lastRefreshFingerprint {
             return true
         }
+
+        guard let state = OverviewState.capture() else { return false }
+        let fingerprint = OverviewRefreshFingerprint(state: state)
         lastRefreshFingerprint = fingerprint
+        lastState = state
         if refreshing {
             clampSelection(to: state)
         } else {
@@ -64,6 +69,7 @@ package final class WorkspaceOverview: OverlaySessionHost {
 
     func overlayDidHide() {
         lastRefreshFingerprint = nil
+        lastState = nil
         liveCard = nil
         liveRootView = nil
     }
@@ -124,7 +130,7 @@ package final class WorkspaceOverview: OverlaySessionHost {
     }
 
     private func moveWorkspaceHorizontal(_ delta: Int) {
-        guard let state = OverviewState.capture() else { return }
+        guard let state = currentState() else { return }
         guard OverlayGridSelection.moveHorizontal(
             selected: &selectedWorkspace,
             delta: delta,
@@ -136,7 +142,7 @@ package final class WorkspaceOverview: OverlaySessionHost {
     }
 
     private func moveWorkspaceRow(_ delta: Int) {
-        guard let state = OverviewState.capture() else { return }
+        guard let state = currentState() else { return }
         guard OverlayGridSelection.moveRow(
             selected: &selectedWorkspace,
             delta: delta,
@@ -161,7 +167,7 @@ package final class WorkspaceOverview: OverlaySessionHost {
     }
 
     private func activate(workspaceIndex: Int, windowIndex: Int?) {
-        guard let state = OverviewState.capture(),
+        guard let state = currentState(),
               state.workspaces.indices.contains(workspaceIndex)
         else { return }
 
@@ -196,6 +202,10 @@ package final class WorkspaceOverview: OverlaySessionHost {
         liveRootView = rootView
         session.present(contentView: rootView, on: state.screen, animated: animated)
     }
+
+    private func currentState() -> OverviewState? {
+        lastState ?? OverviewState.capture()
+    }
 }
 
 private struct OverviewSelection {
@@ -220,6 +230,51 @@ private struct OverviewRefreshFingerprint: Equatable {
         workspaceCount = state.workspaceCount
         workspaces = state.workspaces.map { $0.windows.map(\.identityToken) }
         focusedIndices = state.workspaces.map(\.focusedWindowIndex)
+    }
+
+    static func capture() -> OverviewRefreshFingerprint? {
+        let ws = WorkspaceManager.shared
+        guard !ws.monitors.isEmpty else { return nil }
+
+        let monitor = ws.focusedMonitor
+        let appearance = Config.shared.appearanceSnapshot
+        let count = Config.shared.workspaceCount
+        let workspaces = (0..<count).map { index in
+            monitor.workspaces[index].map(\.overlayIdentityToken)
+        }
+        let focusedIndices = (0..<count).map { index in
+            monitor.clampedFocus(in: index)
+        }
+
+        return OverviewRefreshFingerprint(
+            screen: monitor.screen,
+            monitorLabel: ws.focusedMonitorLabel,
+            appearance: appearance,
+            activeWorkspace: monitor.active,
+            workspaceCount: count,
+            workspaces: workspaces,
+            focusedIndices: focusedIndices
+        )
+    }
+
+    private init(
+        screen: NSScreen,
+        monitorLabel: String?,
+        appearance: AppearanceSnapshot,
+        activeWorkspace: Int,
+        workspaceCount: Int,
+        workspaces: [[Int]],
+        focusedIndices: [Int]
+    ) {
+        display = OverlayDisplayFingerprint(
+            monitorLabel: monitorLabel,
+            screen: screen,
+            appearance: appearance
+        )
+        self.activeWorkspace = activeWorkspace
+        self.workspaceCount = workspaceCount
+        self.workspaces = workspaces
+        self.focusedIndices = focusedIndices
     }
 }
 
