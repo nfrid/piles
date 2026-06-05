@@ -19,6 +19,12 @@ enum FloatingPanel {
         collectionBehavior: [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
     )
 
+    static let workspaceHUD = Style(
+        level: .statusBar,
+        ignoresMouseEvents: true,
+        collectionBehavior: [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+    )
+
     static func make(contentRect: NSRect = .zero, style: Style) -> NSPanel {
         let panel = NSPanel(
             contentRect: contentRect,

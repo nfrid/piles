@@ -9,7 +9,7 @@
 # accent_color = "purple"
 # accent_color = "#AF52DE"
 
-# optional per-workspace name and color for the menu bar, overview, and glance UI
+# optional per-workspace name and color for the menu bar, switch HUD, overview, and glance UI
 # index is 1-based; color is a hex value (#RGB, #RRGGBB) or a named color
 # [[workspace]]
 # index = 1

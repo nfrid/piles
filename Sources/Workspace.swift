@@ -27,6 +27,7 @@ package final class WorkspaceManager {
     private var deferredActivationFollowWork: [pid_t: DispatchWorkItem] = [:]
     private var focusFollowSuppression = FocusFollowSuppression()
     private var locationIndex: [WindowIdentityKey: LocatedWindow] = [:]
+    private var pendingHUD: (workspaceIndex: Int, direction: Int?)?
 
     var focusedMonitor: Monitor { monitors[focusedMonitorIndex] }
 
@@ -54,8 +55,15 @@ package final class WorkspaceManager {
         commitChanges()
     }
 
-    func switchTo(_ index: Int) {
+    func switchTo(_ index: Int, hudDirection: Int? = nil) {
+        let previous = focusedMonitor.active
         focusedMonitor.switchTo(index)
+        if index != previous {
+            queueHUD(
+                workspaceIndex: index,
+                direction: hudDirection ?? workspaceSwitchDirection(from: previous, to: index)
+            )
+        }
         commitChanges()
     }
 
@@ -70,7 +78,14 @@ package final class WorkspaceManager {
             return
         }
         let window = monitor.workspaces[workspaceIndex][windowIndex]
+        let previous = monitor.active
         monitor.revealWorkspace(workspaceIndex, focusing: window)
+        if workspaceIndex != previous {
+            queueHUD(
+                workspaceIndex: workspaceIndex,
+                direction: workspaceSwitchDirection(from: previous, to: workspaceIndex)
+            )
+        }
         commitChanges()
     }
 
@@ -82,10 +97,14 @@ package final class WorkspaceManager {
 
     func switchToOccupied(offset: Int, movingFocusedWindow: Bool) {
         guard let target = focusedMonitor.nextOccupiedWorkspace(offset: offset) else { return }
+        let previous = focusedMonitor.active
         if movingFocusedWindow {
             focusedMonitor.moveActiveWindowAndSwitchTo(target)
         } else {
             focusedMonitor.switchTo(target)
+        }
+        if target != previous {
+            queueHUD(workspaceIndex: target, direction: offset > 0 ? 1 : -1)
         }
         commitChanges()
     }
@@ -96,7 +115,14 @@ package final class WorkspaceManager {
     }
 
     func moveActiveWindowAndSwitchTo(_ index: Int) {
+        let previous = focusedMonitor.active
         focusedMonitor.moveActiveWindowAndSwitchTo(index)
+        if index != previous {
+            queueHUD(
+                workspaceIndex: index,
+                direction: workspaceSwitchDirection(from: previous, to: index)
+            )
+        }
         commitChanges()
     }
 
@@ -444,11 +470,31 @@ package final class WorkspaceManager {
             .sorted { $0.screen.frame.origin.x < $1.screen.frame.origin.x }
     }
 
+    private func queueHUD(workspaceIndex: Int, direction: Int?) {
+        pendingHUD = (workspaceIndex, direction)
+    }
+
+    private func workspaceSwitchDirection(from previous: Int, to index: Int) -> Int? {
+        guard previous != index else { return nil }
+        return index > previous ? 1 : -1
+    }
+
+    private func presentPendingHUD() {
+        guard let pending = pendingHUD else { return }
+        pendingHUD = nil
+        WorkspaceSwitchHUD.shared.show(
+            workspaceIndex: pending.workspaceIndex,
+            on: focusedMonitor.screen,
+            direction: pending.direction
+        )
+    }
+
     private func commitChanges(rebuildIndex: Bool = true, refreshUI: Bool = true) {
         if rebuildIndex {
             rebuildLocationIndex()
         }
         if refreshUI {
+            presentPendingHUD()
             StatusBar.shared.update()
             WorkspaceOverview.shared.refreshIfVisible()
             WorkspaceGlance.shared.refreshIfVisible()
