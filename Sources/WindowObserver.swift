@@ -57,7 +57,7 @@ package final class WindowObserver {
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
                   app.activationPolicy == .regular
             else { return }
-            WorkspaceManager.shared.followExternalFocus(pid: app.processIdentifier)
+            WorkspaceManager.shared.followExternalFocusDeferred(pid: app.processIdentifier)
         })
 
         workspaceObservers.append(nc.addObserver(
@@ -181,6 +181,7 @@ package final class WindowObserver {
 
         if notif == kAXWindowCreatedNotification {
             MainThread.run {
+                WorkspaceManager.shared.prepareForWindowCreated(pid: pidValue)
                 WindowObserver.shared.trySyncWindows(pid: pidValue, attempt: 0)
             }
         } else if notif == kAXUIElementDestroyedNotification {

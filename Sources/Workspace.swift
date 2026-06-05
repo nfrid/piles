@@ -18,11 +18,14 @@ package final class WorkspaceManager {
 
     private static let focusFollowRetryDelay: TimeInterval = 0.015
     private static let focusFollowMaxAttempts = 5
+    private static let activationFollowDelay: TimeInterval = 0.05
 
     private(set) var monitors: [Monitor] = []
     private(set) var focusedMonitorIndex: Int = 0
     private var screenChangeWork: DispatchWorkItem?
     private var focusFollowWork: DispatchWorkItem?
+    private var deferredActivationFollowWork: [pid_t: DispatchWorkItem] = [:]
+    private var focusFollowSuppression = FocusFollowSuppression()
     private var locationIndex: [WindowIdentityKey: LocatedWindow] = [:]
 
     var focusedMonitor: Monitor { monitors[focusedMonitorIndex] }
@@ -134,6 +137,9 @@ package final class WorkspaceManager {
 
         for window in windows {
             let result = addWindow(window, commit: false)
+            if result == .inserted {
+                suppressFocusFollow(for: pid)
+            }
             changed = changed || result == .inserted || result == .replaced
         }
 
@@ -234,6 +240,15 @@ package final class WorkspaceManager {
         MainThread.run { self.startExternalFocus(pid: pid) }
     }
 
+    func followExternalFocusDeferred(pid: pid_t) {
+        MainThread.run { self.scheduleDeferredExternalFocus(pid: pid) }
+    }
+
+    func prepareForWindowCreated(pid: pid_t) {
+        cancelDeferredExternalFocus(pid: pid)
+        suppressFocusFollow(for: pid)
+    }
+
     @discardableResult
     func handleWindowGeometryChange(pid: pid_t, element: AXUIElement) -> Bool {
         if Thread.isMainThread {
@@ -279,6 +294,11 @@ package final class WorkspaceManager {
               NSWorkspace.shared.frontmostApplication?.processIdentifier == pid
         else { return }
 
+        if focusFollowSuppression.isSuppressed(pid: pid) {
+            DebugLog.write("external focus suppressed pid=\(pid) attempt=\(attempt)")
+            return
+        }
+
         if let focused = WindowManager.focusedWindow(pid: pid),
            let location = locateWindow(focused) {
             DebugLog.write("external focus matched pid=\(pid) attempt=\(attempt) window=\(DebugLog.describe(focused)) monitor=\(location.monitorIndex) workspace=\(location.workspaceIndex) index=\(location.windowIndex)")
@@ -316,6 +336,24 @@ package final class WorkspaceManager {
     private func retryExternalFocus(pid: pid_t, attempt: Int) {
         guard attempt < Self.focusFollowMaxAttempts else { return }
         scheduleExternalFocus(pid: pid, attempt: attempt + 1)
+    }
+
+    private func scheduleDeferredExternalFocus(pid: pid_t) {
+        cancelDeferredExternalFocus(pid: pid)
+        let work = DispatchWorkItem { [self] in
+            deferredActivationFollowWork.removeValue(forKey: pid)
+            startExternalFocus(pid: pid)
+        }
+        deferredActivationFollowWork[pid] = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.activationFollowDelay, execute: work)
+    }
+
+    private func cancelDeferredExternalFocus(pid: pid_t) {
+        deferredActivationFollowWork.removeValue(forKey: pid)?.cancel()
+    }
+
+    private func suppressFocusFollow(for pid: pid_t) {
+        focusFollowSuppression.suppress(pid: pid)
     }
 
     package func handleScreenChange() {
