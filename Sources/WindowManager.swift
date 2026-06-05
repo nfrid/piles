@@ -189,6 +189,9 @@ struct TrackedWindow: Equatable {
     @discardableResult
     func hideOffscreen(_ screen: CGRect) -> Bool {
         guard !isFullscreen() else { return false }
+        if let current = getFrame(), WorkspaceWindows.isHiddenOffscreen(frame: current, screen: screen) {
+            return true
+        }
         return setPosition(CGPoint(x: screen.origin.x + 1 - screen.width, y: screen.maxY - 1))
     }
 

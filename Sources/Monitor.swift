@@ -307,6 +307,10 @@ package final class Monitor {
         }
         ignoreGeometryUntil = ProcessInfo.processInfo.systemUptime + Self.geometrySuppressionDelay
         for (window, frame) in zip(layout.windows, layout.frames) {
+            if let current = window.getFrame(),
+               WorkspaceWindows.framesMatch(current, frame, tolerance: Self.frameTolerance) {
+                continue
+            }
             window.setFrameUnchecked(frame)
         }
         return layout.screen
@@ -369,10 +373,7 @@ package final class Monitor {
     }
 
     private func framesMatch(_ lhs: CGRect, _ rhs: CGRect, tolerance: CGFloat) -> Bool {
-        abs(lhs.origin.x - rhs.origin.x) <= tolerance
-            && abs(lhs.origin.y - rhs.origin.y) <= tolerance
-            && abs(lhs.width - rhs.width) <= tolerance
-            && abs(lhs.height - rhs.height) <= tolerance
+        WorkspaceWindows.framesMatch(lhs, rhs, tolerance: tolerance)
     }
 
     func canResizeMasterRatio(at point: CGPoint) -> Bool {

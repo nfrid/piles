@@ -83,6 +83,28 @@ enum MonitorStateTests {
             check(state.focusedIndices[0] == 1, "rememberFocusedWindow moves focus to remembered window")
         }
 
+        do {
+            let a = CGRect(x: 10, y: 20, width: 300, height: 200)
+            let b = CGRect(x: 11.5, y: 21.5, width: 301.5, height: 201.5)
+            let c = CGRect(x: 13, y: 23, width: 303, height: 203)
+            check(WorkspaceWindows.framesMatch(a, a), "framesMatch identical frames")
+            check(WorkspaceWindows.framesMatch(a, b), "framesMatch within default tolerance")
+            check(!WorkspaceWindows.framesMatch(a, c), "framesMatch outside tolerance")
+            check(WorkspaceWindows.framesMatch(a, c, tolerance: 4.0), "framesMatch within custom tolerance")
+        }
+
+        do {
+            let screen = CGRect(x: 0, y: 0, width: 1440, height: 900)
+            let targetX = screen.origin.x + 1 - screen.width  // -1439
+            let hiddenFrame = CGRect(x: targetX, y: screen.maxY - 1, width: 800, height: 600)
+            let nearHiddenFrame = CGRect(x: targetX + 1.5, y: screen.maxY - 1, width: 800, height: 600)
+            let onScreenFrame = CGRect(x: 100, y: 100, width: 800, height: 600)
+
+            check(WorkspaceWindows.isHiddenOffscreen(frame: hiddenFrame, screen: screen), "isHiddenOffscreen detects parked window")
+            check(WorkspaceWindows.isHiddenOffscreen(frame: nearHiddenFrame, screen: screen), "isHiddenOffscreen allows tolerance")
+            check(!WorkspaceWindows.isHiddenOffscreen(frame: onScreenFrame, screen: screen), "isHiddenOffscreen rejects on-screen window")
+        }
+
         return (passed, failed)
     }
 

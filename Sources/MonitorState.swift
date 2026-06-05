@@ -69,6 +69,19 @@ enum WorkspaceWindows {
         return (moved, targetIndex)
     }
 
+    static func framesMatch(_ lhs: CGRect, _ rhs: CGRect, tolerance: CGFloat = 2.0) -> Bool {
+        abs(lhs.origin.x - rhs.origin.x) <= tolerance
+            && abs(lhs.origin.y - rhs.origin.y) <= tolerance
+            && abs(lhs.width - rhs.width) <= tolerance
+            && abs(lhs.height - rhs.height) <= tolerance
+    }
+
+    /// Returns true when `frame` is already parked at the offscreen hide position for `screen`.
+    static func isHiddenOffscreen(frame: CGRect, screen: CGRect, tolerance: CGFloat = 2.0) -> Bool {
+        let targetX = screen.origin.x + 1 - screen.width
+        return abs(frame.origin.x - targetX) <= tolerance
+    }
+
     static func framePreservingSizeInsideScreen(_ frame: CGRect, screen: CGRect) -> CGRect {
         CGRect(
             origin: CGPoint(
