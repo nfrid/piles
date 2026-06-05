@@ -154,6 +154,7 @@ package final class WorkspaceManager {
 
     func syncWindows(pid: pid_t, windows: [TrackedWindow]) {
         DebugLog.write("workspace sync begin pid=\(pid) windows=\(DebugLog.describe(windows))")
+        let hadTrackedWindows = hasTrackedWindows(pid: pid)
         var changed = false
         for monitor in monitors {
             if monitor.removeStaleWindows(pid: pid, current: windows) {
@@ -163,7 +164,7 @@ package final class WorkspaceManager {
 
         for window in windows {
             let result = addWindow(window, commit: false)
-            if result == .inserted {
+            if result == .inserted, hadTrackedWindows {
                 externalFocus.suppress(for: pid)
             }
             changed = changed || result == .inserted || result == .replaced
@@ -271,7 +272,10 @@ package final class WorkspaceManager {
     }
 
     func prepareForWindowCreated(pid: pid_t) {
-        externalFocus.prepareForWindowCreated(pid: pid)
+        externalFocus.prepareForWindowCreated(
+            pid: pid,
+            suppressFollow: hasTrackedWindows(pid: pid)
+        )
     }
 
     @discardableResult
@@ -470,6 +474,17 @@ package final class WorkspaceManager {
 
         guard let result else { return nil }
         return (result.window, result.location)
+    }
+
+    private func hasTrackedWindows(pid: pid_t) -> Bool {
+        for monitor in monitors {
+            for workspace in monitor.workspaces {
+                for window in workspace where window.pid == pid && window.isTrackable() {
+                    return true
+                }
+            }
+        }
+        return false
     }
 
     private func forEachLocatedWindow(_ body: (LocatedWindow) -> Bool) {

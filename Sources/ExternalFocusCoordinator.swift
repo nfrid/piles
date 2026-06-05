@@ -41,9 +41,11 @@ final class ExternalFocusCoordinator {
         MainThread.run { self.scheduleDeferred(pid: pid) }
     }
 
-    func prepareForWindowCreated(pid: pid_t) {
+    func prepareForWindowCreated(pid: pid_t, suppressFollow: Bool) {
         cancelDeferred(pid: pid)
-        suppress(for: pid)
+        if suppressFollow {
+            suppress(for: pid)
+        }
     }
 
     func suppress(for pid: pid_t) {
