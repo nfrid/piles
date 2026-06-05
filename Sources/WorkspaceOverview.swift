@@ -204,22 +204,22 @@ private struct OverviewSelection {
 }
 
 private struct OverviewRefreshFingerprint: Equatable {
+    let display: OverlayDisplayFingerprint
     let activeWorkspace: Int
     let workspaceCount: Int
     let workspaces: [[Int]]
     let focusedIndices: [Int]
-    let monitorLabel: String?
-    let visibleFrame: CGRect
-    let appearance: AppearanceSnapshot
 
     init(state: OverviewState) {
+        display = OverlayDisplayFingerprint(
+            monitorLabel: state.monitorLabel,
+            screen: state.screen,
+            appearance: state.appearance
+        )
         activeWorkspace = state.activeWorkspace
         workspaceCount = state.workspaceCount
         workspaces = state.workspaces.map { $0.windows.map(\.identityToken) }
         focusedIndices = state.workspaces.map(\.focusedWindowIndex)
-        monitorLabel = state.monitorLabel
-        visibleFrame = state.screen.visibleFrame
-        appearance = state.appearance
     }
 }
 

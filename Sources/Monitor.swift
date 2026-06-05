@@ -1,15 +1,16 @@
 import AppKit
 
+struct ActiveWindowSnapshot {
+    let window: TrackedWindow
+    let attributes: WindowAttributes
+
+    var isFullscreen: Bool { attributes.fullscreen }
+    var isTrackable: Bool { attributes.isTrackable }
+    var isTileable: Bool { attributes.isTileable }
+}
+
 @dynamicMemberLookup
 package final class Monitor {
-    private struct ActiveWindowSnapshot {
-        let window: TrackedWindow
-        let attributes: WindowAttributes
-
-        var isFullscreen: Bool { attributes.fullscreen }
-        var isTrackable: Bool { attributes.isTrackable }
-        var isTileable: Bool { attributes.isTileable }
-    }
 
     private static let geometryDebounceDelay: TimeInterval = 0.08
     private static let geometrySuppressionDelay: TimeInterval = 0.20
@@ -316,23 +317,35 @@ package final class Monitor {
         return layout.screen
     }
 
-    @discardableResult
-    private func cleanActiveWorkspace() -> [ActiveWindowSnapshot] {
-        var windows: [TrackedWindow] = []
+    static func cleanActiveWorkspaceWindows(
+        _ windows: [TrackedWindow],
+        attributesFor: (TrackedWindow) -> WindowAttributes?
+    ) -> (windows: [TrackedWindow], snapshots: [ActiveWindowSnapshot]) {
+        var kept: [TrackedWindow] = []
         var snapshots: [ActiveWindowSnapshot] = []
-        windows.reserveCapacity(state.workspaces[state.active].count)
-        snapshots.reserveCapacity(state.workspaces[state.active].count)
+        var seenIdentities: Set<WindowIdentityKey> = []
+        kept.reserveCapacity(windows.count)
+        snapshots.reserveCapacity(windows.count)
+        seenIdentities.reserveCapacity(windows.count)
 
-        for window in state.workspaces[state.active] {
-            guard let attributes = window.attributes(),
-                  attributes.isTrackable,
-                  !windows.contains(window)
+        for window in windows {
+            let identityKeys = window.identityKeys
+            guard seenIdentities.isDisjoint(with: identityKeys),
+                  let attributes = attributesFor(window),
+                  attributes.isTrackable
             else { continue }
-            windows.append(window)
+            seenIdentities.formUnion(identityKeys)
+            kept.append(window)
             snapshots.append(ActiveWindowSnapshot(window: window, attributes: attributes))
         }
-        state.workspaces[state.active] = windows
-        return snapshots
+        return (kept, snapshots)
+    }
+
+    @discardableResult
+    private func cleanActiveWorkspace() -> [ActiveWindowSnapshot] {
+        let cleaned = Self.cleanActiveWorkspaceWindows(state.workspaces[state.active]) { $0.attributes() }
+        state.workspaces[state.active] = cleaned.windows
+        return cleaned.snapshots
     }
 
     private func activeWorkspaceMatchesLayout(tolerance: CGFloat) -> Bool {

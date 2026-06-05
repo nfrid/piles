@@ -84,7 +84,7 @@ package final class Hotkeys {
 
     private var tap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
-    private var resizingMasterRatio = false
+    private let masterRatioDrag = MasterRatioDragHandler()
     private let resolver = HotkeyResolver()
 
     private init() {}
@@ -121,7 +121,7 @@ package final class Hotkeys {
     }
 
     package func stop() {
-        resizingMasterRatio = false
+        masterRatioDrag.reset()
         if let tap {
             CGEvent.tapEnable(tap: tap, enable: false)
         }
@@ -160,37 +160,22 @@ package final class Hotkeys {
             return nil
         }
 
-        if type == .leftMouseUp, Hotkeys.shared.resizingMasterRatio {
-            Hotkeys.shared.resizingMasterRatio = false
-            MainThread.run {
-                WorkspaceManager.shared.resizeMasterRatio(at: event.location)
-            }
+        switch Hotkeys.shared.masterRatioDrag.handle(
+            type: type,
+            event: event,
+            flags: flags,
+            config: config
+        ) {
+        case .notHandled:
+            break
+        case .consume:
             return nil
-        }
-
-        if type == .leftMouseDragged, Hotkeys.shared.resizingMasterRatio, !config.matchesConfiguredModifier(flags) {
-            Hotkeys.shared.resizingMasterRatio = false
-            return passThrough(event)
+        case .passThrough(let passthrough):
+            return passthrough
         }
 
         guard config.matchesConfiguredModifier(flags) else {
             return passThrough(event)
-        }
-
-        if type == .leftMouseDown {
-            let started = MainThread.runSync {
-                WorkspaceManager.shared.canResizeMasterRatio(at: event.location)
-            }
-            Hotkeys.shared.resizingMasterRatio = started
-            return started ? nil : passThrough(event)
-        }
-
-        if type == .leftMouseDragged {
-            guard Hotkeys.shared.resizingMasterRatio else { return passThrough(event) }
-            MainThread.run {
-                WorkspaceManager.shared.resizeMasterRatio(at: event.location)
-            }
-            return nil
         }
 
         guard type == .keyDown else {

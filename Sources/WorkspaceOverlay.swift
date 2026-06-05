@@ -1,5 +1,17 @@
 import AppKit
 
+struct OverlayDisplayFingerprint: Equatable {
+    let monitorLabel: String?
+    let visibleFrame: CGRect
+    let appearance: AppearanceSnapshot
+
+    init(monitorLabel: String?, screen: NSScreen, appearance: AppearanceSnapshot) {
+        self.monitorLabel = monitorLabel
+        self.visibleFrame = screen.visibleFrame
+        self.appearance = appearance
+    }
+}
+
 enum OverlayMetrics {
     static let screenFraction: CGFloat = 0.8
     static let gridColumns = 3
@@ -15,7 +27,7 @@ enum OverlayMetrics {
 
 enum OverlayGridNavigation {
     static func moveHorizontal(selected: Int, delta: Int, count: Int, columns: Int) -> Int? {
-        guard count > 0 else { return nil }
+        guard count > 0, columns > 0, (0..<count).contains(selected) else { return nil }
 
         let row = selected / columns
         let rowStart = row * columns
@@ -27,9 +39,9 @@ enum OverlayGridNavigation {
     }
 
     static func moveRow(selected: Int, delta: Int, count: Int, columns: Int) -> Int? {
-        guard count > 0 else { return nil }
-        let step = delta * columns
-        return (selected + step + count) % count
+        guard count > 0, columns > 0, (0..<count).contains(selected) else { return nil }
+        let raw = selected + delta * columns
+        return ((raw % count) + count) % count
     }
 }
 

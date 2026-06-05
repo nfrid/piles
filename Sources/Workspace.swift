@@ -5,27 +5,15 @@ import ApplicationServices
 package final class WorkspaceManager {
     package static let shared = WorkspaceManager()
 
-    private struct WindowLocation {
-        let monitorIndex: Int
-        let workspaceIndex: Int
-        let windowIndex: Int
-    }
-
     private struct LocatedWindow {
         let window: TrackedWindow
-        let location: WindowLocation
+        let location: WorkspaceWindowLocation
     }
-
-    private static let focusFollowRetryDelay: TimeInterval = 0.015
-    private static let focusFollowMaxAttempts = 5
-    private static let activationFollowDelay: TimeInterval = 0.05
 
     private(set) var monitors: [Monitor] = []
     private(set) var focusedMonitorIndex: Int = 0
     private var screenChangeWork: DispatchWorkItem?
-    private var focusFollowWork: DispatchWorkItem?
-    private var deferredActivationFollowWork: [pid_t: DispatchWorkItem] = [:]
-    private var focusFollowSuppression = FocusFollowSuppression()
+    private lazy var externalFocus = ExternalFocusCoordinator(host: self)
     private var locationIndex: [WindowIdentityKey: LocatedWindow] = [:]
     private var pendingHUD: (workspaceIndex: Int, direction: Int?)?
 
@@ -164,7 +152,7 @@ package final class WorkspaceManager {
         for window in windows {
             let result = addWindow(window, commit: false)
             if result == .inserted {
-                suppressFocusFollow(for: pid)
+                externalFocus.suppress(for: pid)
             }
             changed = changed || result == .inserted || result == .replaced
         }
@@ -263,16 +251,15 @@ package final class WorkspaceManager {
     }
 
     func followExternalFocus(pid: pid_t) {
-        MainThread.run { self.startExternalFocus(pid: pid) }
+        externalFocus.follow(pid: pid)
     }
 
     func followExternalFocusDeferred(pid: pid_t) {
-        MainThread.run { self.scheduleDeferredExternalFocus(pid: pid) }
+        externalFocus.followDeferred(pid: pid)
     }
 
     func prepareForWindowCreated(pid: pid_t) {
-        cancelDeferredExternalFocus(pid: pid)
-        suppressFocusFollow(for: pid)
+        externalFocus.prepareForWindowCreated(pid: pid)
     }
 
     @discardableResult
@@ -296,90 +283,6 @@ package final class WorkspaceManager {
             window.hideOffscreen(WindowManager.screenRect(for: monitor.screen))
         }
         return true
-    }
-
-    private func startExternalFocus(pid: pid_t) {
-        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else { return }
-        DebugLog.write("external focus start pid=\(pid)")
-        focusFollowWork?.cancel()
-        performExternalFocus(pid: pid, attempt: 0)
-    }
-
-    private func scheduleExternalFocus(pid: pid_t, attempt: Int) {
-        focusFollowWork?.cancel()
-        let work = DispatchWorkItem { [self] in
-            performExternalFocus(pid: pid, attempt: attempt)
-        }
-        focusFollowWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.focusFollowRetryDelay, execute: work)
-    }
-
-    private func performExternalFocus(pid: pid_t, attempt: Int) {
-        focusFollowWork = nil
-        guard !monitors.isEmpty,
-              NSWorkspace.shared.frontmostApplication?.processIdentifier == pid
-        else { return }
-
-        if focusFollowSuppression.isSuppressed(pid: pid) {
-            DebugLog.write("external focus suppressed pid=\(pid) attempt=\(attempt)")
-            return
-        }
-
-        if let focused = WindowManager.focusedWindow(pid: pid),
-           let location = locateWindow(focused) {
-            DebugLog.write("external focus matched pid=\(pid) attempt=\(attempt) window=\(DebugLog.describe(focused)) monitor=\(location.monitorIndex) workspace=\(location.workspaceIndex) index=\(location.windowIndex)")
-            revealExternalFocus(focused, at: location)
-            return
-        }
-
-        if let fallback = singleTrackedWindow(pid: pid) {
-            DebugLog.write("external focus fallback pid=\(pid) attempt=\(attempt) window=\(DebugLog.describe(fallback.window)) monitor=\(fallback.location.monitorIndex) workspace=\(fallback.location.workspaceIndex) index=\(fallback.location.windowIndex)")
-            revealExternalFocus(fallback.window, at: fallback.location)
-            return
-        }
-
-        DebugLog.write("external focus retry pid=\(pid) attempt=\(attempt)")
-        retryExternalFocus(pid: pid, attempt: attempt)
-    }
-
-    private func revealExternalFocus(_ window: TrackedWindow, at location: WindowLocation) {
-        let monitor = monitors[location.monitorIndex]
-        if monitor.active == location.workspaceIndex {
-            focusedMonitorIndex = location.monitorIndex
-            if monitor.workspaces[monitor.active].indices.contains(location.windowIndex) {
-                monitor.focusedIndices[monitor.active] = location.windowIndex
-            }
-            monitor.rememberFocusedWindow(window)
-            commitChanges()
-            return
-        }
-
-        focusedMonitorIndex = location.monitorIndex
-        monitor.revealWorkspace(location.workspaceIndex, focusing: window)
-        commitChanges()
-    }
-
-    private func retryExternalFocus(pid: pid_t, attempt: Int) {
-        guard attempt < Self.focusFollowMaxAttempts else { return }
-        scheduleExternalFocus(pid: pid, attempt: attempt + 1)
-    }
-
-    private func scheduleDeferredExternalFocus(pid: pid_t) {
-        cancelDeferredExternalFocus(pid: pid)
-        let work = DispatchWorkItem { [self] in
-            deferredActivationFollowWork.removeValue(forKey: pid)
-            startExternalFocus(pid: pid)
-        }
-        deferredActivationFollowWork[pid] = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.activationFollowDelay, execute: work)
-    }
-
-    private func cancelDeferredExternalFocus(pid: pid_t) {
-        deferredActivationFollowWork.removeValue(forKey: pid)?.cancel()
-    }
-
-    private func suppressFocusFollow(for pid: pid_t) {
-        focusFollowSuppression.suppress(pid: pid)
     }
 
     package func handleScreenChange() {
@@ -517,7 +420,7 @@ package final class WorkspaceManager {
         return monitors.first(where: { $0.screen == NSScreen.main })?.displayID ?? monitors[0].displayID
     }
 
-    private func locateWindow(_ window: TrackedWindow) -> WindowLocation? {
+    func locateWindow(_ window: TrackedWindow) -> WorkspaceWindowLocation? {
         for key in window.identityKeys {
             if let located = locationIndex[key] {
                 return located.location
@@ -526,13 +429,13 @@ package final class WorkspaceManager {
         return nil
     }
 
-    private func locateWindow(pid: pid_t, element: AXUIElement) -> WindowLocation? {
+    private func locateWindow(pid: pid_t, element: AXUIElement) -> WorkspaceWindowLocation? {
         let key = WindowIdentityKey(element: element)
         guard let located = locationIndex[key], located.window.pid == pid else { return nil }
         return located.location
     }
 
-    private func singleTrackedWindow(pid: pid_t) -> (window: TrackedWindow, location: WindowLocation)? {
+    func singleTrackedWindow(pid: pid_t) -> (window: TrackedWindow, location: WorkspaceWindowLocation)? {
         var result: LocatedWindow?
 
         forEachLocatedWindow { located in
@@ -557,7 +460,7 @@ package final class WorkspaceManager {
                     let window = monitor.workspaces[workspaceIndex][windowIndex]
                     let located = LocatedWindow(
                         window: window,
-                        location: WindowLocation(
+                        location: WorkspaceWindowLocation(
                             monitorIndex: monitorIndex,
                             workspaceIndex: workspaceIndex,
                             windowIndex: windowIndex
@@ -599,5 +502,15 @@ package final class WorkspaceManager {
         }
 
         return (monitorForWindow(window), nil)
+    }
+}
+
+extension WorkspaceManager: ExternalFocusHost {
+    func setFocusedMonitorIndex(_ index: Int) {
+        focusedMonitorIndex = index
+    }
+
+    func commitExternalFocusChanges() {
+        commitChanges()
     }
 }

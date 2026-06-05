@@ -210,20 +210,20 @@ package final class WorkspaceGlance: OverlaySessionHost {
 }
 
 private struct GlanceRefreshFingerprint: Equatable {
+    let display: OverlayDisplayFingerprint
     let workspaceIndex: Int
     let windowTokens: [Int]
     let focusedWindowIndex: Int
-    let monitorLabel: String?
-    let visibleFrame: CGRect
-    let appearance: AppearanceSnapshot
 
     init(state: GlanceState) {
+        display = OverlayDisplayFingerprint(
+            monitorLabel: state.monitorLabel,
+            screen: state.screen,
+            appearance: state.appearance
+        )
         workspaceIndex = state.workspaceIndex
         windowTokens = state.windows.map(\.identityToken)
         focusedWindowIndex = state.focusedWindowIndex
-        monitorLabel = state.monitorLabel
-        visibleFrame = state.screen.visibleFrame
-        appearance = state.appearance
     }
 }
 
