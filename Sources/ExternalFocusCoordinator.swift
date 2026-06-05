@@ -12,6 +12,7 @@ protocol ExternalFocusHost: AnyObject {
     func setFocusedMonitorIndex(_ index: Int)
     func locateWindow(_ window: TrackedWindow) -> WorkspaceWindowLocation?
     func singleTrackedWindow(pid: pid_t) -> (window: TrackedWindow, location: WorkspaceWindowLocation)?
+    func queueWorkspaceSwitchHUD(workspaceIndex: Int, from previousWorkspace: Int)
     func commitExternalFocusChanges()
 }
 
@@ -21,9 +22,12 @@ final class ExternalFocusCoordinator {
     private static let activationFollowDelay: TimeInterval = 0.05
 
     private unowned let host: ExternalFocusHost
+    private static let managedSwitchSuppressionDuration: TimeInterval = 0.35
+
     private var focusFollowWork: DispatchWorkItem?
     private var deferredActivationFollowWork: [pid_t: DispatchWorkItem] = [:]
     private var focusFollowSuppression = FocusFollowSuppression()
+    private var managedSwitchSuppressedUntil: TimeInterval = 0
 
     init(host: ExternalFocusHost) {
         self.host = host
@@ -44,6 +48,30 @@ final class ExternalFocusCoordinator {
 
     func suppress(for pid: pid_t) {
         focusFollowSuppression.suppress(pid: pid)
+    }
+
+    func beginManagedWorkspaceSwitch(
+        from previous: Int,
+        to index: Int,
+        monitor: Monitor,
+        now: TimeInterval = ProcessInfo.processInfo.systemUptime
+    ) {
+        focusFollowWork?.cancel()
+        focusFollowWork = nil
+        managedSwitchSuppressedUntil = max(
+            managedSwitchSuppressedUntil,
+            now + Self.managedSwitchSuppressionDuration
+        )
+        for workspaceIndex in [previous, index] {
+            guard monitor.workspaces.indices.contains(workspaceIndex) else { continue }
+            for window in monitor.workspaces[workspaceIndex] {
+                focusFollowSuppression.suppress(
+                    pid: window.pid,
+                    duration: Self.managedSwitchSuppressionDuration,
+                    now: now
+                )
+            }
+        }
     }
 
     private func start(pid: pid_t) {
@@ -67,6 +95,11 @@ final class ExternalFocusCoordinator {
         guard !host.monitors.isEmpty,
               NSWorkspace.shared.frontmostApplication?.processIdentifier == pid
         else { return }
+
+        if isManagedSwitchSuppressed() {
+            DebugLog.write("external focus suppressed managed switch pid=\(pid) attempt=\(attempt)")
+            return
+        }
 
         if focusFollowSuppression.isSuppressed(pid: pid) {
             DebugLog.write("external focus suppressed pid=\(pid) attempt=\(attempt)")
@@ -102,8 +135,13 @@ final class ExternalFocusCoordinator {
             return
         }
 
+        let previousWorkspace = monitor.active
         host.setFocusedMonitorIndex(location.monitorIndex)
         monitor.revealWorkspace(location.workspaceIndex, focusing: window)
+        host.queueWorkspaceSwitchHUD(
+            workspaceIndex: location.workspaceIndex,
+            from: previousWorkspace
+        )
         host.commitExternalFocusChanges()
     }
 
@@ -124,5 +162,11 @@ final class ExternalFocusCoordinator {
 
     private func cancelDeferred(pid: pid_t) {
         deferredActivationFollowWork.removeValue(forKey: pid)?.cancel()
+    }
+
+    private func isManagedSwitchSuppressed(
+        now: TimeInterval = ProcessInfo.processInfo.systemUptime
+    ) -> Bool {
+        now < managedSwitchSuppressedUntil
     }
 }

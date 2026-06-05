@@ -40,14 +40,13 @@ package final class WorkspaceSwitchHUD {
         )
 
         let panel = ensurePanel()
+        dismissGhostPanelIfNeeded(panel)
         let view = ensureView(on: panel)
         let targetFrame = frame(on: screen, contentWidth: WorkspaceSwitchHUDView.contentWidth(for: state))
-        let transitioning = panel.isVisible
-            && panel.alphaValue > 0.01
-            && displayedWorkspaceIndex != workspaceIndex
+        let transitioning = displayedWorkspaceIndex != workspaceIndex
         displayedWorkspaceIndex = workspaceIndex
 
-        bringPanelToFront(panel)
+        let revealedFresh = bringPanelToFront(panel, targetFrame: targetFrame)
 
         if transitioning {
             view.transition(to: state, direction: direction)
@@ -55,7 +54,9 @@ package final class WorkspaceSwitchHUD {
             view.apply(state: state)
         }
 
-        animateFrame(panel, to: targetFrame)
+        if !revealedFresh {
+            animateFrame(panel, to: targetFrame)
+        }
         scheduleHide(generation: generation)
     }
 
@@ -80,16 +81,31 @@ package final class WorkspaceSwitchHUD {
         return view
     }
 
-    private func bringPanelToFront(_ panel: NSPanel) {
-        if !panel.isVisible {
+    private func dismissGhostPanelIfNeeded(_ panel: NSPanel) {
+        guard panel.isVisible, panel.alphaValue <= 0.01 else { return }
+        panel.orderOut(nil)
+        panel.alphaValue = 1
+        displayedWorkspaceIndex = nil
+    }
+
+    @discardableResult
+    private func bringPanelToFront(_ panel: NSPanel, targetFrame: NSRect) -> Bool {
+        if !panel.isEffectivelyVisible {
             panel.alphaValue = 0
             panel.orderFrontRegardless()
-            PanelAnimation.fadeIn(panel, duration: PanelAnimation.hudFadeInDuration)
-            return
+            let needsFrame = !NSEqualRects(panel.frame, targetFrame)
+            PanelAnimation.run(duration: PanelAnimation.hudFadeInDuration, timing: .easeOut) {
+                panel.animator().alphaValue = 1
+                if needsFrame {
+                    panel.animator().setFrame(targetFrame, display: true)
+                }
+            }
+            return true
         }
 
         panel.alphaValue = 1
         panel.orderFrontRegardless()
+        return false
     }
 
     private func frame(on screen: NSScreen, contentWidth: CGFloat) -> NSRect {
@@ -179,6 +195,7 @@ private final class WorkspaceSwitchHUDView: NSVisualEffectView {
         titleLabel.lineBreakMode = .byTruncatingTail
         titleLabel.maximumNumberOfLines = 1
         titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        titleLabel.wantsLayer = true
 
         chevronView.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
         chevronView.contentTintColor = .white.withAlphaComponent(0.82)
@@ -293,5 +310,11 @@ private final class WorkspaceSwitchHUDView: NSVisualEffectView {
     private func slideOffset(for direction: Int?) -> CGFloat {
         guard let direction, direction != 0 else { return 10 }
         return direction > 0 ? 14 : -14
+    }
+}
+
+private extension NSPanel {
+    var isEffectivelyVisible: Bool {
+        isVisible && alphaValue > 0.01
     }
 }

@@ -45,6 +45,9 @@ package final class WorkspaceManager {
 
     func switchTo(_ index: Int, hudDirection: Int? = nil) {
         let previous = focusedMonitor.active
+        if index != previous {
+            beginManagedWorkspaceSwitch(from: previous, to: index)
+        }
         focusedMonitor.switchTo(index)
         if index != previous {
             queueHUD(
@@ -67,6 +70,9 @@ package final class WorkspaceManager {
         }
         let window = monitor.workspaces[workspaceIndex][windowIndex]
         let previous = monitor.active
+        if workspaceIndex != previous {
+            beginManagedWorkspaceSwitch(from: previous, to: workspaceIndex)
+        }
         monitor.revealWorkspace(workspaceIndex, focusing: window)
         if workspaceIndex != previous {
             queueHUD(
@@ -86,6 +92,9 @@ package final class WorkspaceManager {
     func switchToOccupied(offset: Int, movingFocusedWindow: Bool) {
         guard let target = focusedMonitor.nextOccupiedWorkspace(offset: offset) else { return }
         let previous = focusedMonitor.active
+        if target != previous {
+            beginManagedWorkspaceSwitch(from: previous, to: target)
+        }
         if movingFocusedWindow {
             focusedMonitor.moveActiveWindowAndSwitchTo(target)
         } else {
@@ -104,6 +113,9 @@ package final class WorkspaceManager {
 
     func moveActiveWindowAndSwitchTo(_ index: Int) {
         let previous = focusedMonitor.active
+        if index != previous {
+            beginManagedWorkspaceSwitch(from: previous, to: index)
+        }
         focusedMonitor.moveActiveWindowAndSwitchTo(index)
         if index != previous {
             queueHUD(
@@ -373,6 +385,14 @@ package final class WorkspaceManager {
             .sorted { $0.screen.frame.origin.x < $1.screen.frame.origin.x }
     }
 
+    private func beginManagedWorkspaceSwitch(from previous: Int, to index: Int) {
+        externalFocus.beginManagedWorkspaceSwitch(
+            from: previous,
+            to: index,
+            monitor: focusedMonitor
+        )
+    }
+
     private func queueHUD(workspaceIndex: Int, direction: Int?) {
         pendingHUD = (workspaceIndex, direction)
     }
@@ -508,6 +528,14 @@ package final class WorkspaceManager {
 extension WorkspaceManager: ExternalFocusHost {
     func setFocusedMonitorIndex(_ index: Int) {
         focusedMonitorIndex = index
+    }
+
+    func queueWorkspaceSwitchHUD(workspaceIndex: Int, from previousWorkspace: Int) {
+        guard workspaceIndex != previousWorkspace else { return }
+        queueHUD(
+            workspaceIndex: workspaceIndex,
+            direction: workspaceSwitchDirection(from: previousWorkspace, to: workspaceIndex)
+        )
     }
 
     func commitExternalFocusChanges() {
