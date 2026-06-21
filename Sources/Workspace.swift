@@ -476,7 +476,7 @@ package final class WorkspaceManager {
         return (result.window, result.location)
     }
 
-    private func hasTrackedWindows(pid: pid_t) -> Bool {
+    package func hasTrackedWindows(pid: pid_t) -> Bool {
         for monitor in monitors {
             for workspace in monitor.workspaces {
                 for window in workspace where window.pid == pid && window.isTrackable() {

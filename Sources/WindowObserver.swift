@@ -4,7 +4,7 @@ import ApplicationServices
 package final class WindowObserver {
     package static let shared = WindowObserver()
 
-    private static let maxRetries = 10
+    private static let maxRetries = 120
     private static let retryInterval: TimeInterval = 0.05
 
     private static let appNotifications: [CFString] = [
@@ -57,7 +57,10 @@ package final class WindowObserver {
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
                   app.activationPolicy == .regular
             else { return }
-            WorkspaceManager.shared.followExternalFocusDeferred(pid: app.processIdentifier)
+            let pid = app.processIdentifier
+            WorkspaceManager.shared.followExternalFocusDeferred(pid: pid)
+            guard !WorkspaceManager.shared.hasTrackedWindows(pid: pid) else { return }
+            WindowObserver.shared.trySyncWindows(pid: pid, attempt: 0)
         })
 
         workspaceObservers.append(nc.addObserver(
@@ -82,9 +85,7 @@ package final class WindowObserver {
             guard app.activationPolicy == .regular else { continue }
             let pid = app.processIdentifier
             observeApp(pid: pid)
-            if let windows = WindowManager.windows(pid: pid) {
-                observeWindows(windows, pid: pid)
-            }
+            trySyncWindows(pid: pid, attempt: 0)
         }
     }
 
