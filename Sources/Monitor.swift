@@ -225,12 +225,24 @@ package final class Monitor {
 
     private func focusOffset(_ offset: Int) {
         guard !activeWorkspaceIsFullscreen else { return }
+        let beforeCount = state.workspaces[state.active].count
+        _ = cleanActiveWorkspace()
         let windows = state.workspaces[state.active]
-        guard windows.count > 1,
-              let focused = WindowManager.focusedWindow(),
-              let i = windows.firstIndex(of: focused)
-        else { return }
-        let targetIndex = (i + offset + windows.count) % windows.count
+        guard !windows.isEmpty else { return }
+
+        if windows.count != beforeCount {
+            retile()
+        }
+
+        let targetIndex: Int
+        if windows.count > 1,
+           let focused = WindowManager.focusedWindow(),
+           let i = windows.firstIndex(of: focused) {
+            targetIndex = (i + offset + windows.count) % windows.count
+        } else {
+            targetIndex = state.clampedFocus(in: state.active)
+        }
+
         let target = windows[targetIndex]
         focusInActiveLayout(target)
         state.focusedIndices[state.active] = targetIndex
