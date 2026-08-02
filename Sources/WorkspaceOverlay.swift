@@ -116,8 +116,10 @@ enum SelectionCellStyle {
 
 final class OverlayPanelController {
     private var panel: NSPanel?
+    private var animationGeneration = 0
 
     func present(contentView: NSView, on screen: NSScreen, animated: Bool) {
+        animationGeneration += 1
         let panel = panel(for: screen)
         panel.contentView = contentView
         panel.setFrame(screen.frame, display: true)
@@ -135,24 +137,22 @@ final class OverlayPanelController {
         PanelAnimation.fadeIn(panel)
     }
 
-    /// Update content without animating or altering visibility.
-    func updateContent(_ contentView: NSView) {
-        guard let panel else { return }
-        panel.contentView = contentView
-    }
-
     func dismiss(ifStillHidden: @escaping () -> Bool) {
+        animationGeneration += 1
+        let generation = animationGeneration
         guard let panel, panel.isVisible else {
             self.panel = nil
             return
         }
 
-        PanelAnimation.fadeOut(panel) {
+        PanelAnimation.fadeOut(panel) { [weak self] in
+            guard let self,
+                  self.animationGeneration == generation,
+                  ifStillHidden()
+            else { return }
             panel.orderOut(nil)
             panel.alphaValue = 1
-            if ifStillHidden() {
-                self.panel = nil
-            }
+            self.panel = nil
         }
     }
 
@@ -312,7 +312,7 @@ final class OverlayGridView: NSView {
         width: CGFloat,
         height: CGFloat
     ) -> [CGRect] {
-        guard count > 0, width > 0, height > 0 else { return [] }
+        guard count > 0, columns > 0, width > 0, height > 0 else { return [] }
 
         let rowCount = (count + columns - 1) / columns
         guard rowCount > 0 else { return [] }

@@ -122,7 +122,4 @@ final class OverlaySession {
         panelController.present(contentView: contentView, on: screen, animated: animated)
     }
 
-    func updateContent(_ contentView: NSView) {
-        panelController.updateContent(contentView)
-    }
 }

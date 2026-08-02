@@ -41,6 +41,18 @@ enum OverlayGridNavigationTests {
             OverlayGridNavigation.moveRow(selected: 0, delta: 1, count: 4, columns: 0) == nil,
             "row move rejects zero columns"
         )
+        check(
+            OverlayGridView.layoutFrames(
+                count: 3, columns: 0, spacing: 10, width: 300, height: 200
+            ).isEmpty,
+            "layout rejects zero columns"
+        )
+        check(
+            OverlayGridView.layoutFrames(
+                count: 3, columns: -1, spacing: 10, width: 300, height: 200
+            ).isEmpty,
+            "layout rejects negative columns"
+        )
 
         var selected = 2
         check(

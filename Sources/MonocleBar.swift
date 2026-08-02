@@ -8,6 +8,8 @@ package final class MonocleBar {
     private let horizontalMargin: CGFloat = 12
     private let bottomMargin: CGFloat = 10
     private var panels: [CGDirectDisplayID: NSPanel] = [:]
+    private var panelAnimationGenerations: [CGDirectDisplayID: Int] = [:]
+    private var updateGeneration = 0
     private var lastState: MonocleBarState?
     private var optionHeld = false
 
@@ -20,6 +22,8 @@ package final class MonocleBar {
     }
 
     package func update() {
+        updateGeneration += 1
+        let generation = updateGeneration
         guard optionHeld else {
             hideAll()
             return
@@ -35,7 +39,12 @@ package final class MonocleBar {
         hidePanels(except: state.displayID)
         guard state != lastState else {
             repositionPanel(displayID: state.displayID, screen: state.screen, contentWidth: state.contentWidth)
-            showPanel(displayID: state.displayID, screen: state.screen, contentWidth: state.contentWidth)
+            showPanel(
+                displayID: state.displayID,
+                screen: state.screen,
+                contentWidth: state.contentWidth,
+                updateGeneration: generation
+            )
             return
         }
         let updateKind = MonocleBarUpdateKind(previous: lastState, next: state)
@@ -46,7 +55,11 @@ package final class MonocleBar {
         if let view = panel.contentView as? MonocleBarView {
             switch updateKind {
             case .focusOnly:
-                view.applyFocus(focusedIndex: state.focusedIndex, accentColor: accent)
+                view.applyFocus(
+                    items: state.items,
+                    focusedIndex: state.focusedIndex,
+                    accentColor: accent
+                )
             case .reorder, .inPlaceRefresh:
                 view.reorderItems(
                     items: state.items,
@@ -57,12 +70,17 @@ package final class MonocleBar {
                 view.transition(
                     items: state.items,
                     focusedIndex: state.focusedIndex,
-                    accentColor: accent
+                    accentColor: accent,
+                    isCurrent: { [weak self] in
+                        self?.optionHeld ?? false
+                    }
                 ) { [self] in
+                    guard self.optionHeld, self.updateGeneration == generation else { return }
                     self.showPanel(
                         displayID: state.displayID,
                         screen: state.screen,
-                        contentWidth: state.contentWidth
+                        contentWidth: state.contentWidth,
+                        updateGeneration: generation
                     )
                 }
                 return
@@ -70,7 +88,8 @@ package final class MonocleBar {
             showPanel(
                 displayID: state.displayID,
                 screen: state.screen,
-                contentWidth: state.contentWidth
+                contentWidth: state.contentWidth,
+                updateGeneration: generation
             )
         } else {
             panel.contentView = MonocleBarView(
@@ -81,7 +100,8 @@ package final class MonocleBar {
             showPanel(
                 displayID: state.displayID,
                 screen: state.screen,
-                contentWidth: state.contentWidth
+                contentWidth: state.contentWidth,
+                updateGeneration: generation
             )
         }
     }
@@ -124,41 +144,79 @@ package final class MonocleBar {
         panel.setFrame(frame, display: true)
     }
 
-    private func showPanel(displayID: CGDirectDisplayID, screen: NSScreen, contentWidth: CGFloat) {
+    private func showPanel(
+        displayID: CGDirectDisplayID,
+        screen: NSScreen,
+        contentWidth: CGFloat,
+        updateGeneration: Int
+    ) {
+        guard optionHeld, updateGeneration == self.updateGeneration else { return }
+
         let panel = panel(for: displayID)
+        let animationGeneration = beginPanelAnimation(for: displayID)
         let target = visibleFrame(screen: screen, contentWidth: contentWidth)
         guard panel.isVisible else {
             panel.alphaValue = 0
             panel.setFrame(hiddenFrame(screen: screen, contentWidth: contentWidth), display: false)
             panel.orderFrontRegardless()
-            PanelAnimation.run(duration: PanelAnimation.monocleDuration, timing: .easeOut) {
-                panel.animator().setFrame(target, display: true)
-                panel.animator().alphaValue = 1
-            }
+            PanelAnimation.run(
+                duration: PanelAnimation.monocleDuration,
+                timing: .easeOut,
+                changes: {
+                    panel.animator().setFrame(target, display: true)
+                    panel.animator().alphaValue = 1
+                },
+                completion: { [weak self, weak panel] in
+                    guard let self, let panel,
+                          self.optionHeld,
+                          self.updateGeneration == updateGeneration,
+                          self.isCurrentPanelAnimation(displayID, generation: animationGeneration)
+                    else { return }
+                    panel.alphaValue = 1
+                }
+            )
             return
         }
 
         panel.alphaValue = 1
         guard !NSEqualRects(panel.frame, target) else { return }
-        PanelAnimation.run(duration: PanelAnimation.monocleDuration, timing: .easeOut) {
-            panel.animator().setFrame(target, display: true)
-        }
+        PanelAnimation.run(
+            duration: PanelAnimation.monocleDuration,
+            timing: .easeOut,
+            changes: {
+                panel.animator().setFrame(target, display: true)
+            },
+            completion: { [weak self, weak panel] in
+                guard let self, let panel,
+                      self.optionHeld,
+                      self.updateGeneration == updateGeneration,
+                      self.isCurrentPanelAnimation(displayID, generation: animationGeneration)
+                else { return }
+                panel.setFrame(target, display: true)
+            }
+        )
     }
 
     private func hidePanels(except displayID: CGDirectDisplayID) {
         for (id, panel) in panels where id != displayID {
-            hide(panel, cancelIfOptionHeld: false)
+            hide(panel, displayID: id, cancelIfOptionHeld: false)
         }
     }
 
     private func hideAll() {
         lastState = nil
-        for panel in panels.values {
-            hide(panel, cancelIfOptionHeld: true)
+        for (id, panel) in panels {
+            hide(panel, displayID: id, cancelIfOptionHeld: true)
         }
     }
 
-    private func hide(_ panel: NSPanel, cancelIfOptionHeld: Bool) {
+    private func hide(
+        _ panel: NSPanel,
+        displayID: CGDirectDisplayID,
+        cancelIfOptionHeld: Bool
+    ) {
+        let animationGeneration = beginPanelAnimation(for: displayID)
+        (panel.contentView as? MonocleBarView)?.cancelPendingTransition()
         guard panel.isVisible else { return }
         var target = panel.frame
         target.origin.y = panel.screen?.visibleFrame.minY ?? target.minY - height
@@ -167,15 +225,31 @@ package final class MonocleBar {
         PanelAnimation.run(duration: PanelAnimation.monocleDuration, timing: .easeIn, changes: {
             panel.animator().setFrame(target, display: true)
             panel.animator().alphaValue = 0
-        }, completion: {
-            guard !cancelIfOptionHeld || !self.optionHeld else { return }
+        }, completion: { [weak self, weak panel] in
+            guard let self, let panel,
+                  self.isCurrentPanelAnimation(displayID, generation: animationGeneration),
+                  !cancelIfOptionHeld || !self.optionHeld
+            else { return }
             panel.orderOut(nil)
             panel.alphaValue = 1
         })
     }
+
+    private func beginPanelAnimation(for displayID: CGDirectDisplayID) -> Int {
+        let generation = (panelAnimationGenerations[displayID] ?? 0) + 1
+        panelAnimationGenerations[displayID] = generation
+        return generation
+    }
+
+    private func isCurrentPanelAnimation(
+        _ displayID: CGDirectDisplayID,
+        generation: Int
+    ) -> Bool {
+        panelAnimationGenerations[displayID] == generation
+    }
 }
 
-private struct MonocleBarState: Equatable {
+struct MonocleBarState: Equatable {
     let displayID: CGDirectDisplayID
     let screen: NSScreen
     let items: [MonocleBarItem]
@@ -188,6 +262,7 @@ private struct MonocleBarState: Equatable {
         lhs.displayID == rhs.displayID
             && lhs.screen.visibleFrame == rhs.screen.visibleFrame
             && lhs.items == rhs.items
+            && lhs.activeWorkspace == rhs.activeWorkspace
             && lhs.focusedIndex == rhs.focusedIndex
             && lhs.appearance == rhs.appearance
     }
@@ -248,7 +323,7 @@ private enum MonocleBarUpdateKind {
     }
 }
 
-private struct MonocleBarItem: Equatable {
+struct MonocleBarItem: Equatable {
     let identity: Int
     let title: String
 }
@@ -269,6 +344,7 @@ private final class MonocleBarView: NSVisualEffectView {
     private var viewsByIdentity: [Int: MonocleBarItemView] = [:]
     private var displayedItems: [MonocleBarItem] = []
     private var contentTransitionGeneration = 0
+    private var contentTransitionPending = false
 
     init(items: [MonocleBarItem], focusedIndex: Int, accentColor: NSColor) {
         stack = NSStackView()
@@ -301,15 +377,21 @@ private final class MonocleBarView: NSVisualEffectView {
             stack.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
 
+        let generation = contentTransitionGeneration
         DispatchQueue.main.async { [weak self] in
-            self?.animateItemsAppear()
+            guard let self, self.contentTransitionGeneration == generation else { return }
+            self.animateItemsAppear(generation: generation)
         }
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
-    func applyFocus(focusedIndex: Int, accentColor: NSColor) {
+    func applyFocus(items: [MonocleBarItem], focusedIndex: Int, accentColor: NSColor) {
+        guard !contentTransitionPending else {
+            replaceImmediately(items: items, focusedIndex: focusedIndex, accentColor: accentColor)
+            return
+        }
         for index in displayedItems.indices {
             itemViews[index].apply(
                 item: displayedItems[index],
@@ -321,6 +403,10 @@ private final class MonocleBarView: NSVisualEffectView {
     }
 
     func reorderItems(items: [MonocleBarItem], focusedIndex: Int, accentColor: NSColor) {
+        guard !contentTransitionPending else {
+            replaceImmediately(items: items, focusedIndex: focusedIndex, accentColor: accentColor)
+            return
+        }
         displayedItems = items
         let orderedViews = resolveViews(for: items, accentColor: accentColor)
         removeObsoleteViews(keeping: Set(items.map(\.identity)))
@@ -417,17 +503,36 @@ private final class MonocleBarView: NSVisualEffectView {
         }
     }
 
+    func cancelPendingTransition() {
+        contentTransitionGeneration += 1
+        contentTransitionPending = false
+    }
+
+    private func replaceImmediately(
+        items: [MonocleBarItem],
+        focusedIndex: Int,
+        accentColor: NSColor
+    ) {
+        contentTransitionGeneration += 1
+        contentTransitionPending = false
+        rebuildItems(items, focusedIndex: focusedIndex, accentColor: accentColor)
+        animateItemsAppear(generation: contentTransitionGeneration)
+    }
+
     func transition(
         items: [MonocleBarItem],
         focusedIndex: Int,
         accentColor: NSColor,
+        isCurrent: @escaping () -> Bool = { true },
         completion: (() -> Void)? = nil
     ) {
         contentTransitionGeneration += 1
         let generation = contentTransitionGeneration
+        contentTransitionPending = true
 
         let reveal = { [self] in
-            guard generation == self.contentTransitionGeneration else { return }
+            guard generation == self.contentTransitionGeneration, isCurrent() else { return }
+            self.contentTransitionPending = false
             self.rebuildItems(items, focusedIndex: focusedIndex, accentColor: accentColor)
             self.animateItemsAppear(generation: generation)
             completion?()

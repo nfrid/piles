@@ -27,11 +27,14 @@ let (p9, f9) = FocusFollowSuppressionTests.runAll()
 fputs("running overlay grid navigation tests...\n", stderr)
 let (p10, f10) = OverlayGridNavigationTests.runAll()
 
+fputs("running monocle bar tests...\n", stderr)
+let (p11, f11) = MonocleBarTests.runAll()
+
 fputs("running performance tests...\n", stderr)
 let (p2, f2) = TilerPerformanceTests.runAll()
 
-let passed = p1 + p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9 + p10
-let failed = f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8 + f9 + f10
+let passed = p1 + p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9 + p10 + p11
+let failed = f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8 + f9 + f10 + f11
 
 fputs("\n\(passed) passed, \(failed) failed\n", stderr)
 
