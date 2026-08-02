@@ -21,7 +21,7 @@
 # name = "Web"
 # color = "orange"
 
-# master window width ratio (0.0-1.0)
+# master window width ratio (0.1-0.9)
 # master_ratio = 0.55
 
 # default layout for each workspace: "monocle" or "tile"

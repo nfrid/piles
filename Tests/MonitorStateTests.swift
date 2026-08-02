@@ -64,12 +64,32 @@ enum MonitorStateTests {
             check(state.removeActiveWindow(matching: focused)?.pid == 4101, "removeActiveWindow returns removed window")
             check(state.workspaces[1].map(\.pid) == [4102], "removeActiveWindow updates active workspace")
 
+            state.workspaces[1] = [other, focused, testWindow(pid: 4103)]
+            state.focusedIndices[1] = 2
+            check(state.removeActiveWindow(matching: other)?.pid == 4102, "removeActiveWindow returns a window before focus")
+            check(state.focusedIndices[1] == 1, "removeActiveWindow shifts source focus after removal")
+
             state.workspaces[1] = [focused]
             let moved = state.moveActiveWindow(matching: focused, to: 2)
             check(moved?.pid == 4101, "moveActiveWindow returns moved window")
             check(state.workspaces[1].isEmpty, "moveActiveWindow clears source workspace")
             check(state.workspaces[2].map(\.pid) == [4101], "moveActiveWindow inserts at front of target")
             check(state.focusedIndices[2] == 0, "moveActiveWindow resets target focus index")
+        }
+
+        do {
+            var state = MonitorState(count: 2, defaultLayout: .tile)
+            let a = testWindow(pid: 4151)
+            let b = testWindow(pid: 4152)
+            let c = testWindow(pid: 4153)
+            let inserted = testWindow(pid: 4154)
+            state.workspaces[0] = [a, b, c]
+            state.focusedIndices[0] = 2
+
+            state.insertWindow(inserted, workspace: 1, position: 1)
+
+            check(state.workspaces[0].map(\.pid) == [4154, 4151, 4152, 4153], "insertWindow inserts at requested position")
+            check(state.focusedIndices[0] == 3, "insertWindow shifts focus when inserting before it")
         }
 
         do {

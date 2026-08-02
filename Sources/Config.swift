@@ -355,8 +355,19 @@ package enum ConfigParser {
 
     private static func applyMasterRatio(_ value: Any?, to config: inout Config, diagnose: DiagnosticSink) {
         guard let value else { return }
-        guard let ratio = value as? Double, ratio >= 0, ratio <= 1 else {
-            diagnose("master_ratio must be between 0.0 and 1.0, using 0.55")
+        let ratio: Double?
+        if let double = value as? Double {
+            ratio = double
+        } else if let integer = value as? Int {
+            ratio = Double(integer)
+        } else {
+            ratio = nil
+        }
+
+        let minimum = Double(LayoutSettings.minimumMasterRatio)
+        let maximum = Double(LayoutSettings.maximumMasterRatio)
+        guard let ratio, ratio >= minimum, ratio <= maximum else {
+            diagnose("master_ratio must be between 0.1 and 0.9, using 0.55")
             return
         }
         config.masterRatio = CGFloat(ratio)

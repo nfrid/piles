@@ -197,11 +197,13 @@ package final class WorkspaceManager {
 
     func focusNext() {
         focusedMonitor.focusNext()
+        commitChanges(refreshUI: false)
         MonocleBar.shared.update()
     }
 
     func focusPrev() {
         focusedMonitor.focusPrev()
+        commitChanges(refreshUI: false)
         MonocleBar.shared.update()
     }
 
@@ -248,14 +250,14 @@ package final class WorkspaceManager {
         guard let focused = WindowManager.focusedWindow() else { return }
 
         let source = focusedMonitor
-        guard let i = source.workspaces[source.active].firstIndex(of: focused) else { return }
-        let moved = focused.keepingMembers(from: source.workspaces[source.active][i])
-        source.workspaces[source.active].remove(at: i)
+        guard let removed = source.state.removeActiveWindow(matching: focused) else { return }
+        let moved = focused.keepingMembers(from: removed)
         source.retile()
 
         let targetIndex = (focusedMonitorIndex + offset + monitors.count) % monitors.count
         let target = monitors[targetIndex]
         target.insertWindow(moved)
+        target.focusedIndices[target.active] = 0
         target.retile()
 
         focusedMonitorIndex = targetIndex

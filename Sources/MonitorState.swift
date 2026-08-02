@@ -142,12 +142,30 @@ package struct MonitorState {
     mutating func insertWindow(_ window: TrackedWindow, workspace: Int? = nil, position: Int? = nil) {
         let workspaceIndex = resolvedWorkspaceIndex(workspace)
         let insertIndex = resolvedInsertIndex(position, in: workspaceIndex)
+        let oldCount = workspaces[workspaceIndex].count
+        let oldFocus = clampedFocus(in: workspaceIndex)
         workspaces[workspaceIndex].insert(window, at: insertIndex)
+        if oldCount == 0 {
+            focusedIndices[workspaceIndex] = 0
+        } else if insertIndex <= oldFocus {
+            focusedIndices[workspaceIndex] = oldFocus + 1
+        } else {
+            focusedIndices[workspaceIndex] = oldFocus
+        }
     }
 
     mutating func removeActiveWindow(matching focused: TrackedWindow) -> TrackedWindow? {
-        guard let index = workspaces[active].firstIndex(of: focused) else { return nil }
-        return workspaces[active].remove(at: index)
+        guard let removedIndex = workspaces[active].firstIndex(of: focused) else { return nil }
+        let oldFocus = clampedFocus(in: active)
+        let removedWindow = workspaces[active].remove(at: removedIndex)
+        if workspaces[active].isEmpty {
+            focusedIndices[active] = 0
+        } else if removedIndex < oldFocus {
+            focusedIndices[active] = oldFocus - 1
+        } else {
+            focusedIndices[active] = Swift.min(oldFocus, workspaces[active].count - 1)
+        }
+        return removedWindow
     }
 
     mutating func moveActiveWindow(matching focused: TrackedWindow, to workspaceIndex: Int) -> TrackedWindow? {

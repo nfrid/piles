@@ -150,6 +150,30 @@ enum MonitorTests {
             check(cleaned.windows.map(\.pid) == [5801], "clean can keep a later duplicate if the first snapshot is not trackable")
             check(attributeReads == 2, "clean does not mark unkept duplicate identities as seen")
         }
+
+        do {
+            let before = testWindow(pid: 5901)
+            let focused = testWindow(pid: 5902)
+            let duplicateFocused = testWindow(pid: 5902)
+            var focusedIndex = 2
+            let cleaned = Monitor.cleanActiveWorkspaceWindows(
+                [before, focused, duplicateFocused],
+                focusedIndex: &focusedIndex
+            ) { _ in trackable }
+            check(cleaned.windows.map(\.pid) == [5901, 5902], "clean removes duplicate after focused window")
+            check(focusedIndex == 1, "clean preserves focused identity after duplicate removal")
+
+            let stale = testWindow(pid: 5903)
+            focusedIndex = 1
+            let staleCleaned = Monitor.cleanActiveWorkspaceWindows(
+                [stale, focused],
+                focusedIndex: &focusedIndex
+            ) { window in
+                window.pid == 5903 ? minimized : trackable
+            }
+            check(staleCleaned.windows.map(\.pid) == [5902], "clean removes stale window before focused window")
+            check(focusedIndex == 0, "clean shifts focus index after stale removal")
+        }
     }
 
     private static func testWindow(pid: pid_t) -> TrackedWindow {
