@@ -5,30 +5,56 @@ import Foundation
 package final class IPCServer {
     package static let shared = IPCServer()
 
+    private static let maxConcurrentClients = 16
+
     private let queue = DispatchQueue(label: "com.piles.ipc", qos: .userInitiated)
+    private let clientQueue = DispatchQueue(
+        label: "com.piles.ipc.clients",
+        qos: .userInitiated,
+        attributes: .concurrent
+    )
+    private var clientSlots = DispatchSemaphore(value: maxConcurrentClients)
+    private let queueKey = DispatchSpecificKey<Void>()
     private var listenFD: Int32 = -1
     private var acceptSource: DispatchSourceRead?
+    private var boundSocketPath: String?
 
-    private init() {}
+    private init() {
+        queue.setSpecific(key: queueKey, value: ())
+    }
 
     package func start() {
-        guard Config.shared.ipcEnabled else { return }
-
-        queue.async { [self] in
-            guard self.bindAndListen() else { return }
-            self.installAcceptSource()
+        onQueue { [self] in
+            guard Config.shared.ipcEnabled, listenFD < 0 else { return }
+            clientSlots = DispatchSemaphore(value: Self.maxConcurrentClients)
+            guard bindAndListen() else { return }
+            installAcceptSource()
         }
     }
 
     package func stop() {
-        queue.async { [self] in
-            self.acceptSource?.cancel()
-            self.acceptSource = nil
-            if self.listenFD >= 0 {
-                close(self.listenFD)
-                self.listenFD = -1
+        onQueue { [self] in
+            acceptSource?.cancel()
+            acceptSource = nil
+
+            // The source is canceled on its own serial queue before its fd is
+            // closed, so no new accept callback can race with this close.
+            if listenFD >= 0 {
+                close(listenFD)
+                listenFD = -1
             }
-            unlink(Config.shared.expandedIPCSocketPath)
+            if let path = boundSocketPath {
+                unlink(path)
+                boundSocketPath = nil
+            }
+        }
+    }
+
+    private func onQueue(_ work: () -> Void) {
+        if DispatchQueue.getSpecific(key: queueKey) != nil {
+            work()
+        } else {
+            queue.sync(execute: work)
         }
     }
 
@@ -71,6 +97,12 @@ package final class IPCServer {
             return false
         }
 
+        guard setNonBlocking(fd: fd) else {
+            close(fd)
+            unlink(path)
+            return false
+        }
+
         guard listen(fd, 8) == 0 else {
             logErrno("listen")
             close(fd)
@@ -79,7 +111,40 @@ package final class IPCServer {
         }
 
         listenFD = fd
+        boundSocketPath = path
         fputs("piles: ipc listening on \(path)\n", stderr)
+        return true
+    }
+
+    private func setNonBlocking(fd: Int32) -> Bool {
+        setBlocking(fd: fd, nonBlocking: true)
+    }
+
+    private func setBlocking(fd: Int32) -> Bool {
+        setBlocking(fd: fd, nonBlocking: false)
+    }
+
+    private func setBlocking(fd: Int32, nonBlocking: Bool) -> Bool {
+        let flags: Int32
+        while true {
+            let result = fcntl(fd, F_GETFL)
+            if result >= 0 {
+                flags = result
+                break
+            }
+            if errno != EINTR {
+                logErrno("fcntl(F_GETFL)")
+                return false
+            }
+        }
+
+        let newFlags = nonBlocking ? flags | O_NONBLOCK : flags & ~O_NONBLOCK
+        while fcntl(fd, F_SETFL, newFlags) < 0 {
+            if errno != EINTR {
+                logErrno("fcntl(F_SETFL)")
+                return false
+            }
+        }
         return true
     }
 
@@ -88,26 +153,66 @@ package final class IPCServer {
         source.setEventHandler { [weak self] in
             self?.acceptClients()
         }
-        source.setCancelHandler { [weak self] in
-            if let fd = self?.listenFD, fd >= 0 {
-                close(fd)
-                self?.listenFD = -1
-            }
-        }
+        // Socket ownership stays with this queue. The source is canceled
+        // before the fd is closed in stop(), avoiding delayed fd reuse.
+        source.setCancelHandler {}
         acceptSource = source
         source.resume()
     }
 
     private func acceptClients() {
+        let fd = listenFD
+        guard fd >= 0 else { return }
+
         while true {
-            let client = accept(listenFD, nil, nil)
+            let client = accept(fd, nil, nil)
             if client < 0 {
+                if errno == EINTR { continue }
                 if errno == EAGAIN || errno == EWOULDBLOCK { break }
                 logErrno("accept")
                 break
             }
-            handleClient(fd: client)
+
+            // Some platforms inherit O_NONBLOCK from the listening socket;
+            // keep the per-client read semantics blocking on its own worker.
+            guard setBlocking(fd: client) else {
+                close(client)
+                continue
+            }
+            guard preventSIGPIPE(fd: client) else {
+                close(client)
+                continue
+            }
+
+            // A client is allowed to block in readLine, but only on its own
+            // worker. Reject excess clients instead of blocking this accept
+            // queue while all bounded workers are occupied by idle clients.
+            let slots = clientSlots
+            guard slots.wait(timeout: .now()) == .success else {
+                close(client)
+                continue
+            }
+            clientQueue.async { [self] in
+                defer { slots.signal() }
+                handleClient(fd: client)
+            }
         }
+    }
+
+    private func preventSIGPIPE(fd: Int32) -> Bool {
+        var value: Int32 = 1
+        while setsockopt(
+            fd,
+            SOL_SOCKET,
+            SO_NOSIGPIPE,
+            &value,
+            socklen_t(MemoryLayout<Int32>.size)
+        ) < 0 {
+            if errno == EINTR { continue }
+            logErrno("setsockopt(SO_NOSIGPIPE)")
+            return false
+        }
+        return true
     }
 
     private func handleClient(fd: Int32) {
@@ -144,6 +249,7 @@ package final class IPCServer {
         while buffer.count < 4096 {
             let n = recv(fd, &chunk, chunk.count, 0)
             if n < 0 {
+                if errno == EINTR { continue }
                 logErrno("recv")
                 return nil
             }
@@ -167,11 +273,18 @@ package final class IPCServer {
             var sent = 0
             while sent < len {
                 let n = send(fd, ptr + sent, len - sent, 0)
-                if n <= 0 {
-                    logErrno("send")
-                    return
+                if n > 0 {
+                    sent += n
+                    continue
                 }
-                sent += n
+                if n < 0, errno == EINTR { continue }
+                if n < 0 {
+                    let error = errno
+                    if error != EPIPE && error != ECONNRESET {
+                        logErrno("send")
+                    }
+                }
+                return
             }
         }
     }
