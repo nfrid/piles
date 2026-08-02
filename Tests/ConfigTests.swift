@@ -113,6 +113,23 @@ enum ConfigTests {
 
         do {
             var diagnostics: [String] = []
+            let config = ConfigParser.parse(text: "master_ratio = 1") {
+                diagnostics.append($0)
+            }
+            check(abs((config?.masterRatio ?? 0) - 0.55) < 0.001, "rejects integer master ratio endpoint")
+            check(
+                diagnostics.contains("master_ratio must be between 0.1 and 0.9, using 0.55"),
+                "diagnoses integer master ratio endpoint with safe bounds"
+            )
+
+            let low = LayoutSettings(masterRatio: 0).masterRatio
+            let high = LayoutSettings(masterRatio: 1).masterRatio
+            check(low == LayoutSettings.minimumMasterRatio, "layout clamps master ratio low endpoint")
+            check(high == LayoutSettings.maximumMasterRatio, "layout clamps master ratio high endpoint")
+        }
+
+        do {
+            var diagnostics: [String] = []
             let config = ConfigParser.parse(text: """
             workspace_count = 0
 

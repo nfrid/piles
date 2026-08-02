@@ -333,6 +333,24 @@ package final class Monitor {
         _ windows: [TrackedWindow],
         attributesFor: (TrackedWindow) -> WindowAttributes?
     ) -> (windows: [TrackedWindow], snapshots: [ActiveWindowSnapshot]) {
+        var focusedIndex = 0
+        return cleanActiveWorkspaceWindows(
+            windows,
+            focusedIndex: &focusedIndex,
+            attributesFor: attributesFor
+        )
+    }
+
+    static func cleanActiveWorkspaceWindows(
+        _ windows: [TrackedWindow],
+        focusedIndex: inout Int,
+        attributesFor: (TrackedWindow) -> WindowAttributes?
+    ) -> (windows: [TrackedWindow], snapshots: [ActiveWindowSnapshot]) {
+        let originalFocus = Swift.min(
+            Swift.max(focusedIndex, 0),
+            max(windows.count - 1, 0)
+        )
+        let focusedWindow = windows.indices.contains(originalFocus) ? windows[originalFocus] : nil
         var kept: [TrackedWindow] = []
         var snapshots: [ActiveWindowSnapshot] = []
         var seenIdentities: Set<WindowIdentityKey> = []
@@ -350,13 +368,27 @@ package final class Monitor {
             kept.append(window)
             snapshots.append(ActiveWindowSnapshot(window: window, attributes: attributes))
         }
+
+        if kept.isEmpty {
+            focusedIndex = 0
+        } else if let focusedWindow,
+                  let index = kept.firstIndex(where: { $0.hasElement(focusedWindow) }) {
+            focusedIndex = index
+        } else {
+            focusedIndex = Swift.min(originalFocus, kept.count - 1)
+        }
         return (kept, snapshots)
     }
 
     @discardableResult
     private func cleanActiveWorkspace() -> [ActiveWindowSnapshot] {
-        let cleaned = Self.cleanActiveWorkspaceWindows(state.workspaces[state.active]) { $0.attributes() }
+        var focusedIndex = state.focusedIndices[state.active]
+        let cleaned = Self.cleanActiveWorkspaceWindows(
+            state.workspaces[state.active],
+            focusedIndex: &focusedIndex
+        ) { $0.attributes() }
         state.workspaces[state.active] = cleaned.windows
+        state.focusedIndices[state.active] = focusedIndex
         return cleaned.snapshots
     }
 
@@ -428,7 +460,7 @@ package final class Monitor {
         }
 
         let rawRatio = (point.x - screen.minX) / screen.width
-        return Swift.min(Swift.max(rawRatio, 0.10), 0.90)
+        return LayoutSettings.clampedMasterRatio(rawRatio)
     }
 
     private var activeTileableWindowCount: Int {

@@ -9,7 +9,7 @@ package enum IPCCommandParser {
             return .failure(.invalid("empty command"))
         }
 
-        let parts = trimmed.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
+        let parts = trimmed.split(whereSeparator: { $0.isWhitespace }).map(String.init)
         guard let verb = parts.first?.lowercased() else {
             return .failure(.invalid("empty command"))
         }

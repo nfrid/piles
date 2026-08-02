@@ -6,10 +6,17 @@ package enum Layout {
 }
 
 package struct LayoutSettings {
+    package static let minimumMasterRatio: CGFloat = 0.10
+    package static let maximumMasterRatio: CGFloat = 0.90
+
     let masterRatio: CGFloat
 
     package init(masterRatio: CGFloat = 0.55) {
-        self.masterRatio = min(max(masterRatio, 0), 1)
+        self.masterRatio = Self.clampedMasterRatio(masterRatio)
+    }
+
+    package static func clampedMasterRatio(_ ratio: CGFloat) -> CGFloat {
+        min(max(ratio, minimumMasterRatio), maximumMasterRatio)
     }
 }
 

@@ -37,6 +37,7 @@ enum IPCCommandTests {
         check(!IPCCommandParser.isPing("workspace 1"), "non-ping detection")
 
         resolves("workspace 3", to: .switchTo(2))
+        resolves("\tworkspace\t3\n", to: .switchTo(2))
         resolves("workspace 3 --move", to: .moveActiveWindowTo(2))
         resolves("workspace next", to: .switchToOccupied(offset: 1, movingFocusedWindow: false))
         resolves("workspace prev --move", to: .switchToOccupied(offset: -1, movingFocusedWindow: true))
