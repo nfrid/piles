@@ -90,6 +90,7 @@ enum TilerTests {
             )
             check(frames[0].width == 480, "explicit master ratio controls master width")
             check(frames[1].width == 1440, "explicit master ratio controls stack width")
+            check(LayoutSettings(masterRatio: .nan).masterRatio == 0.55, "non-finite master ratio uses default")
         }
 
         do {

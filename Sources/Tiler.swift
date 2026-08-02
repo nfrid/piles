@@ -16,7 +16,8 @@ package struct LayoutSettings {
     }
 
     package static func clampedMasterRatio(_ ratio: CGFloat) -> CGFloat {
-        min(max(ratio, minimumMasterRatio), maximumMasterRatio)
+        guard ratio.isFinite else { return 0.55 }
+        return min(max(ratio, minimumMasterRatio), maximumMasterRatio)
     }
 }
 

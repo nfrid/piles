@@ -6,6 +6,7 @@ package final class IPCServer {
     package static let shared = IPCServer()
 
     private static let maxConcurrentClients = 16
+    private static let clientTimeoutSeconds = 1
 
     private let queue = DispatchQueue(label: "com.piles.ipc", qos: .userInitiated)
     private let clientQueue = DispatchQueue(
@@ -13,11 +14,13 @@ package final class IPCServer {
         qos: .userInitiated,
         attributes: .concurrent
     )
-    private var clientSlots = DispatchSemaphore(value: maxConcurrentClients)
+    private let clientSlots = DispatchSemaphore(value: maxConcurrentClients)
     private let queueKey = DispatchSpecificKey<Void>()
     private var listenFD: Int32 = -1
     private var acceptSource: DispatchSourceRead?
+    private var activeClientFDs: Set<Int32> = []
     private var boundSocketPath: String?
+    private var generation = 0
 
     private init() {
         queue.setSpecific(key: queueKey, value: ())
@@ -26,14 +29,15 @@ package final class IPCServer {
     package func start() {
         onQueue { [self] in
             guard Config.shared.ipcEnabled, listenFD < 0 else { return }
-            clientSlots = DispatchSemaphore(value: Self.maxConcurrentClients)
             guard bindAndListen() else { return }
+            generation += 1
             installAcceptSource()
         }
     }
 
     package func stop() {
         onQueue { [self] in
+            generation += 1
             acceptSource?.cancel()
             acceptSource = nil
 
@@ -42,6 +46,11 @@ package final class IPCServer {
             if listenFD >= 0 {
                 close(listenFD)
                 listenFD = -1
+            }
+            // Workers own and close accepted descriptors. Shutdown interrupts
+            // their blocking reads without risking a double-close after fd reuse.
+            for fd in activeClientFDs {
+                shutdown(fd, SHUT_RDWR)
             }
             if let path = boundSocketPath {
                 unlink(path)
@@ -179,22 +188,26 @@ package final class IPCServer {
                 close(client)
                 continue
             }
-            guard preventSIGPIPE(fd: client) else {
+            guard preventSIGPIPE(fd: client), setClientTimeout(fd: client) else {
                 close(client)
                 continue
             }
 
-            // A client is allowed to block in readLine, but only on its own
-            // worker. Reject excess clients instead of blocking this accept
-            // queue while all bounded workers are occupied by idle clients.
-            let slots = clientSlots
-            guard slots.wait(timeout: .now()) == .success else {
+            // Reads are isolated on bounded workers and time out, so abandoned
+            // clients cannot permanently consume all client slots.
+            // Reject excess clients instead of blocking the accept queue.
+            guard clientSlots.wait(timeout: .now()) == .success else {
                 close(client)
                 continue
             }
+            activeClientFDs.insert(client)
+            let acceptedGeneration = generation
             clientQueue.async { [self] in
-                defer { slots.signal() }
-                handleClient(fd: client)
+                defer {
+                    finishClient(fd: client)
+                    clientSlots.signal()
+                }
+                handleClient(fd: client, generation: acceptedGeneration)
             }
         }
     }
@@ -215,17 +228,45 @@ package final class IPCServer {
         return true
     }
 
-    private func handleClient(fd: Int32) {
-        defer { close(fd) }
+    private func setClientTimeout(fd: Int32) -> Bool {
+        var timeout = timeval(tv_sec: Self.clientTimeoutSeconds, tv_usec: 0)
+        for option in [SO_RCVTIMEO, SO_SNDTIMEO] {
+            if setsockopt(
+                fd,
+                SOL_SOCKET,
+                option,
+                &timeout,
+                socklen_t(MemoryLayout<timeval>.size)
+            ) < 0 {
+                logErrno("setsockopt(timeout)")
+                return false
+            }
+        }
+        return true
+    }
 
-        guard let line = readLine(fd: fd) else { return }
+    private func finishClient(fd: Int32) {
+        onQueue { activeClientFDs.remove(fd) }
+        close(fd)
+    }
+
+    private func isCurrent(generation: Int) -> Bool {
+        var current = false
+        onQueue {
+            current = listenFD >= 0 && self.generation == generation
+        }
+        return current
+    }
+
+    private func handleClient(fd: Int32, generation: Int) {
+        guard let line = readLine(fd: fd), isCurrent(generation: generation) else { return }
 
         if IPCCommandParser.isPing(line) {
             writeResponse(fd: fd, "pong\n")
             return
         }
 
-        let workspaceCount = Config.shared.workspaceCount
+        let workspaceCount = MainThread.runSync { Config.shared.workspaceCount }
         switch IPCCommandParser.parse(line, workspaceCount: workspaceCount) {
         case .failure(.invalid(let message)):
             writeResponse(fd: fd, "error: \(message)\n")
@@ -234,10 +275,14 @@ package final class IPCServer {
                 writeResponse(fd: fd, "error: invalid command\n")
                 return
             }
-            DispatchQueue.main.sync {
+            let performed = DispatchQueue.main.sync { [self] in
+                guard isCurrent(generation: generation) else { return false }
                 ActionDispatcher.perform(action)
+                return true
             }
-            writeResponse(fd: fd, "ok\n")
+            if performed {
+                writeResponse(fd: fd, "ok\n")
+            }
         }
     }
 
@@ -250,7 +295,9 @@ package final class IPCServer {
             let n = recv(fd, &chunk, chunk.count, 0)
             if n < 0 {
                 if errno == EINTR { continue }
-                logErrno("recv")
+                if errno != EAGAIN && errno != EWOULDBLOCK {
+                    logErrno("recv")
+                }
                 return nil
             }
             if n == 0 { break }

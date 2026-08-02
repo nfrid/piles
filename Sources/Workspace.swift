@@ -336,7 +336,7 @@ package final class WorkspaceManager {
             let target = monitors[0]
             for ws in oldMonitor.workspaces {
                 for window in ws where !target.containsWindow(window) {
-                    target.workspaces[target.active].insert(window, at: 0)
+                    target.insertWindow(window)
                 }
             }
         }

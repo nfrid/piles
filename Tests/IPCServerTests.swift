@@ -43,6 +43,19 @@ enum IPCServerTests {
             } else {
                 check(false, "connects an idle client")
             }
+
+            var idleClients: [Int32] = []
+            for _ in 0..<16 {
+                if let client = connect(to: path) {
+                    idleClients.append(client)
+                }
+            }
+            usleep(100_000)
+            check(idleClients.count == 16, "fills the bounded client worker pool")
+            check(send("ping\n", to: path) == nil, "rejects clients while the worker pool is saturated")
+            usleep(1_200_000)
+            check(send("ping\n", to: path) == "pong\n", "worker slots recover after idle-client timeouts")
+            idleClients.forEach { close($0) }
         }
 
         // Changing config before stop must not leave the path that was bound.
@@ -51,6 +64,23 @@ enum IPCServerTests {
         check(!FileManager.default.fileExists(atPath: path), "stop unlinks the bound socket path")
         IPCServer.shared.stop()
         check(!FileManager.default.fileExists(atPath: path), "stop is idempotent")
+
+        Config.shared.ipcSocketPath = path
+        IPCServer.shared.start()
+        check(waitForSocket(path), "server restarts after stop")
+        if let idleClient = connect(to: path) {
+            usleep(100_000)
+            IPCServer.shared.stop()
+            var byte: UInt8 = 0
+            check(recv(idleClient, &byte, 1, 0) <= 0, "stop disconnects active idle clients")
+            close(idleClient)
+        } else {
+            check(false, "connects an idle client before stop")
+        }
+        IPCServer.shared.start()
+        check(waitForSocket(path), "server restarts after disconnecting active clients")
+        check(send("ping\n", to: path) == "pong\n", "restarted server handles requests")
+        IPCServer.shared.stop()
 
         return (passed, failed)
     }

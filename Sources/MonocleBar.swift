@@ -153,48 +153,25 @@ package final class MonocleBar {
         guard optionHeld, updateGeneration == self.updateGeneration else { return }
 
         let panel = panel(for: displayID)
-        let animationGeneration = beginPanelAnimation(for: displayID)
+        // Starting a show invalidates any pending hide completion for this panel.
+        _ = beginPanelAnimation(for: displayID)
         let target = visibleFrame(screen: screen, contentWidth: contentWidth)
         guard panel.isVisible else {
             panel.alphaValue = 0
             panel.setFrame(hiddenFrame(screen: screen, contentWidth: contentWidth), display: false)
             panel.orderFrontRegardless()
-            PanelAnimation.run(
-                duration: PanelAnimation.monocleDuration,
-                timing: .easeOut,
-                changes: {
-                    panel.animator().setFrame(target, display: true)
-                    panel.animator().alphaValue = 1
-                },
-                completion: { [weak self, weak panel] in
-                    guard let self, let panel,
-                          self.optionHeld,
-                          self.updateGeneration == updateGeneration,
-                          self.isCurrentPanelAnimation(displayID, generation: animationGeneration)
-                    else { return }
-                    panel.alphaValue = 1
-                }
-            )
+            PanelAnimation.run(duration: PanelAnimation.monocleDuration, timing: .easeOut) {
+                panel.animator().setFrame(target, display: true)
+                panel.animator().alphaValue = 1
+            }
             return
         }
 
         panel.alphaValue = 1
         guard !NSEqualRects(panel.frame, target) else { return }
-        PanelAnimation.run(
-            duration: PanelAnimation.monocleDuration,
-            timing: .easeOut,
-            changes: {
-                panel.animator().setFrame(target, display: true)
-            },
-            completion: { [weak self, weak panel] in
-                guard let self, let panel,
-                      self.optionHeld,
-                      self.updateGeneration == updateGeneration,
-                      self.isCurrentPanelAnimation(displayID, generation: animationGeneration)
-                else { return }
-                panel.setFrame(target, display: true)
-            }
-        )
+        PanelAnimation.run(duration: PanelAnimation.monocleDuration, timing: .easeOut) {
+            panel.animator().setFrame(target, display: true)
+        }
     }
 
     private func hidePanels(except displayID: CGDirectDisplayID) {
