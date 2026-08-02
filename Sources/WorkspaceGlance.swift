@@ -41,7 +41,6 @@ package final class WorkspaceGlance: OverlaySessionHost {
     private var lastRefreshFingerprint: GlanceRefreshFingerprint?
     private var lastState: GlanceState?
     private var liveCard: GlanceCardView?
-    private var liveRootView: OverlayRootView?
 
     private init() {}
 
@@ -107,7 +106,6 @@ package final class WorkspaceGlance: OverlaySessionHost {
         lastRefreshFingerprint = nil
         lastState = nil
         liveCard = nil
-        liveRootView = nil
     }
 
     func overlayToggleBinding(_ config: Config) -> (key: UInt16, shift: Bool) {
@@ -206,7 +204,6 @@ package final class WorkspaceGlance: OverlaySessionHost {
             onDismiss: { [weak self] in self?.hide() }
         )
         liveCard = card
-        liveRootView = rootView
         session.present(contentView: rootView, on: state.screen, animated: animated)
     }
 

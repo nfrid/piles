@@ -30,6 +30,9 @@ let (p9, f9) = FocusFollowSuppressionTests.runAll()
 fputs("running overlay grid navigation tests...\n", stderr)
 let (p10, f10) = OverlayGridNavigationTests.runAll()
 
+fputs("running monocle bar tests...\n", stderr)
+let (p11, f11) = MonocleBarTests.runAll()
+
 fputs("running performance tests...\n", stderr)
 let (p2, f2) = TilerPerformanceTests.runAll()
 
