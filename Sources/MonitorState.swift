@@ -100,7 +100,13 @@ enum WorkspaceWindows {
 }
 
 package struct MonitorState {
+    struct WindowMetadata {
+        var floating = false
+        var parkedFrame: CGRect?
+    }
+
     var workspaces: [[TrackedWindow]]
+    private(set) var windowMetadata: [WindowIdentityKey: WindowMetadata] = [:]
     var layouts: [Layout]
     var focusedIndices: [Int]
     var active: Int
@@ -139,12 +145,89 @@ package struct MonitorState {
         return Swift.min(Swift.max(focusedIndices[workspaceIndex], 0), count - 1)
     }
 
-    mutating func insertWindow(_ window: TrackedWindow, workspace: Int? = nil, position: Int? = nil) {
+    func isFloating(_ window: TrackedWindow) -> Bool {
+        window.identityKeys.contains { windowMetadata[$0]?.floating == true }
+    }
+
+    func metadata(for window: TrackedWindow) -> WindowMetadata? {
+        window.identityKeys.compactMap { windowMetadata[$0] }.first
+    }
+
+    mutating func adoptMetadata(_ metadata: WindowMetadata?, for window: TrackedWindow) {
+        guard let metadata else { return }
+        for key in window.identityKeys { windowMetadata[key] = metadata }
+    }
+
+    func parkedFrame(for window: TrackedWindow) -> CGRect? {
+        window.identityKeys.compactMap { windowMetadata[$0]?.parkedFrame }.first
+    }
+
+    mutating func setFloating(_ floating: Bool, for window: TrackedWindow) {
+        var metadata = window.identityKeys.compactMap { windowMetadata[$0] }.first ?? WindowMetadata()
+        metadata.floating = floating
+        for key in window.identityKeys { windowMetadata[key] = metadata }
+    }
+
+    mutating func rememberParkedFrame(_ frame: CGRect, for window: TrackedWindow) {
+        var metadata = window.identityKeys.compactMap { windowMetadata[$0] }.first ?? WindowMetadata()
+        guard metadata.parkedFrame == nil else { return }
+        metadata.parkedFrame = frame
+        for key in window.identityKeys { windowMetadata[key] = metadata }
+    }
+
+    mutating func updateParkedFrame(_ frame: CGRect, for window: TrackedWindow) {
+        guard var metadata = window.identityKeys.compactMap({ windowMetadata[$0] }).first else { return }
+        metadata.parkedFrame = frame
+        for key in window.identityKeys { windowMetadata[key] = metadata }
+    }
+
+    mutating func captureParkedFrame(_ frame: CGRect, for window: TrackedWindow) {
+        var metadata = window.identityKeys.compactMap { windowMetadata[$0] }.first ?? WindowMetadata()
+        metadata.parkedFrame = frame
+        for key in window.identityKeys { windowMetadata[key] = metadata }
+    }
+
+    mutating func pruneMetadata() {
+        let remaining = Set(workspaces.flatMap { $0.flatMap(\.identityKeys) })
+        windowMetadata = windowMetadata.filter { remaining.contains($0.key) }
+    }
+
+    mutating func removeMetadata(for window: TrackedWindow) {
+        for key in window.identityKeys { windowMetadata.removeValue(forKey: key) }
+    }
+
+    mutating func clearParkedFrame(for window: TrackedWindow) {
+        for key in window.identityKeys {
+            guard var metadata = windowMetadata[key] else { continue }
+            metadata.parkedFrame = nil
+            if !metadata.floating { windowMetadata.removeValue(forKey: key) }
+            else { windowMetadata[key] = metadata }
+        }
+    }
+
+    mutating func replaceWindow(_ old: TrackedWindow, with new: TrackedWindow) {
+        transferMetadata(from: old, to: new)
+        for workspace in workspaces.indices {
+            if let index = workspaces[workspace].firstIndex(of: old) {
+                workspaces[workspace][index] = new
+                return
+            }
+        }
+    }
+
+    private mutating func transferMetadata(from old: TrackedWindow, to new: TrackedWindow) {
+        guard let metadata = old.identityKeys.compactMap({ windowMetadata[$0] }).first else { return }
+        for key in old.identityKeys { windowMetadata.removeValue(forKey: key) }
+        for key in new.identityKeys { windowMetadata[key] = metadata }
+    }
+
+    mutating func insertWindow(_ window: TrackedWindow, workspace: Int? = nil, position: Int? = nil, floating: Bool = false) {
         let workspaceIndex = resolvedWorkspaceIndex(workspace)
         let insertIndex = resolvedInsertIndex(position, in: workspaceIndex)
         let oldCount = workspaces[workspaceIndex].count
         let oldFocus = clampedFocus(in: workspaceIndex)
         workspaces[workspaceIndex].insert(window, at: insertIndex)
+        if floating { setFloating(true, for: window) }
         if oldCount == 0 {
             focusedIndices[workspaceIndex] = 0
         } else if insertIndex <= oldFocus {
@@ -192,12 +275,16 @@ package struct MonitorState {
                 activeChanged = activeChanged || index == active
             }
         }
+        pruneMetadata()
         return (changed, activeChanged)
     }
 
     mutating func rememberFocusedWindow(_ focused: TrackedWindow) -> Bool {
         guard let index = workspaces[active].firstIndex(of: focused) else { return false }
-        workspaces[active][index] = focused.keepingMembers(from: workspaces[active][index])
+        let old = workspaces[active][index]
+        let replacement = focused.keepingMembers(from: old)
+        transferMetadata(from: old, to: replacement)
+        workspaces[active][index] = replacement
         focusedIndices[active] = index
         return true
     }

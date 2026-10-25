@@ -20,6 +20,12 @@ package final class Monitor {
     var screen: NSScreen
     var state = MonitorState()
     var onStateChange: (() -> Void)?
+    var readFrame: (TrackedWindow) -> CGRect? = { $0.getFrame() }
+    var writeFrame: (TrackedWindow, CGRect) -> Bool = { $0.setFrameUnchecked($1) }
+    var moveWindow: (TrackedWindow, CGPoint) -> Bool = { $0.setPosition($1) }
+    var isEligibleForGeometry: (TrackedWindow) -> Bool = { $0.isTileable() }
+    var windowAttributes: (TrackedWindow) -> WindowAttributes? = { $0.attributes() }
+    var paused = false
 
     subscript<T>(dynamicMember keyPath: WritableKeyPath<MonitorState, T>) -> T {
         get { state[keyPath: keyPath] }
@@ -72,7 +78,7 @@ package final class Monitor {
             return
         }
         guard let moved = moveActiveFocusedWindow(to: index) else { return }
-        moved.hideOffscreen(WindowManager.screenRect(for: self.screen))
+        park(moved)
         retile()
         restoreFocusedWindow()
     }
@@ -105,30 +111,35 @@ package final class Monitor {
     }
 
     @discardableResult
-    func insertWindow(_ window: TrackedWindow) -> Bool {
+    func insertWindow(
+        _ window: TrackedWindow,
+        floating: Bool = false,
+        workspace: Int? = nil,
+        position: Int? = nil
+    ) -> Bool {
         guard updateExistingWindow(window) == .missing else { return false }
-        state.insertWindow(window)
+        state.insertWindow(window, workspace: workspace, position: position, floating: floating)
         return true
     }
 
     @discardableResult
-    func addWindow(_ window: TrackedWindow) -> WindowUpdate {
-        addWindow(window, workspace: nil, position: nil)
+    func addWindow(_ window: TrackedWindow, floating: Bool = false) -> WindowUpdate {
+        addWindow(window, workspace: nil, position: nil, floating: floating)
     }
 
     @discardableResult
-    func addWindow(_ window: TrackedWindow, workspace: Int?, position: Int?) -> WindowUpdate {
+    func addWindow(_ window: TrackedWindow, workspace: Int?, position: Int?, floating: Bool = false) -> WindowUpdate {
         let existing = updateExistingWindow(window)
         switch existing {
         case .missing:
             let workspaceIndex = state.resolvedWorkspaceIndex(workspace)
             let insertIndex = state.resolvedInsertIndex(position, in: workspaceIndex)
             DebugLog.write("monitor \(displayID) add workspace=\(workspaceIndex) index=\(insertIndex) window=\(DebugLog.describe(window))")
-            state.insertWindow(window, workspace: workspace, position: position)
+            state.insertWindow(window, workspace: workspace, position: position, floating: floating)
             if workspaceIndex == state.active {
-                scheduleRetile()
+                if !paused && !state.isFloating(window) { scheduleRetile() }
             } else {
-                window.hideOffscreen(WindowManager.screenRect(for: self.screen))
+                park(window)
             }
             return .inserted
         case .replaced:
@@ -145,7 +156,7 @@ package final class Monitor {
             let current = state.workspaces[ws][i]
             if current.group != window.group || !current.hasSameMembers(window) {
                 DebugLog.write("monitor \(displayID) replace workspace=\(ws) index=\(i) old={\(DebugLog.describe(current))} new={\(DebugLog.describe(window))}")
-                state.workspaces[ws][i] = window
+                state.replaceWindow(current, with: window)
                 return .replaced
             }
             return .unchanged
@@ -156,7 +167,7 @@ package final class Monitor {
                 continue
             }
             DebugLog.write("monitor \(displayID) replace untileable workspace=\(ws) index=\(i) old={\(DebugLog.describe(state.workspaces[ws][i]))} new={\(DebugLog.describe(window))}")
-            state.workspaces[ws][i] = window
+            state.replaceWindow(state.workspaces[ws][i], with: window)
             return .replaced
         }
 
@@ -165,7 +176,7 @@ package final class Monitor {
                 continue
             }
             DebugLog.write("monitor \(displayID) replace fullscreen workspace=\(ws) index=\(i) old={\(DebugLog.describe(state.workspaces[ws][i]))} new={\(DebugLog.describe(window))}")
-            state.workspaces[ws][i] = window
+            state.replaceWindow(state.workspaces[ws][i], with: window)
             return .replaced
         }
         return .missing
@@ -174,9 +185,9 @@ package final class Monitor {
     func applyReplacementEffects(for window: TrackedWindow) {
         guard let workspaceIndex = state.workspaces.firstIndex(where: { $0.contains(window) }) else { return }
         if workspaceIndex == state.active {
-            scheduleRetile()
-        } else if window.isTileable() {
-            window.hideOffscreen(WindowManager.screenRect(for: self.screen))
+            if !paused && !state.isFloating(window) { scheduleRetile() }
+        } else {
+            park(window)
         }
     }
 
@@ -292,9 +303,10 @@ package final class Monitor {
     }
 
     private func scheduleRetile() {
-        guard retileWork == nil else { return }
+        guard !paused, retileWork == nil else { return }
         let work = DispatchWorkItem { [self] in
             retileWork = nil
+            guard !paused else { return }
             retile()
         }
         retileWork = work
@@ -302,6 +314,7 @@ package final class Monitor {
     }
 
     func scheduleCorrectiveRetile() {
+        guard !paused else { return }
         let now = ProcessInfo.processInfo.systemUptime
         guard now >= ignoreGeometryUntil else { return }
 
@@ -309,7 +322,7 @@ package final class Monitor {
         let scheduledActive = state.active
         let work = DispatchWorkItem { [self] in
             geometryRetileWork = nil
-            guard state.active == scheduledActive else { return }
+            guard !paused, state.active == scheduledActive else { return }
             guard ProcessInfo.processInfo.systemUptime >= ignoreGeometryUntil else { return }
             guard !activeWorkspaceMatchesLayout(tolerance: Self.frameTolerance) else { return }
             retile()
@@ -320,16 +333,20 @@ package final class Monitor {
 
     @discardableResult
     func retile() -> CGRect {
+        guard !paused else { return WindowManager.screenFrame(for: self.screen) }
         guard let layout = activeLayoutFrames() else {
             return WindowManager.screenFrame(for: self.screen)
         }
         ignoreGeometryUntil = ProcessInfo.processInfo.systemUptime + Self.geometrySuppressionDelay
         for (window, frame) in zip(layout.windows, layout.frames) {
-            if let current = window.getFrame(),
+            if let current = readFrame(window),
                WorkspaceWindows.framesMatch(current, frame, tolerance: Self.frameTolerance) {
+                state.clearParkedFrame(for: window)
                 continue
             }
-            window.setFrameUnchecked(frame)
+            if writeFrame(window, frame) {
+                state.clearParkedFrame(for: window)
+            }
         }
         return layout.screen
     }
@@ -417,6 +434,7 @@ package final class Monitor {
         if applyChanges {
             state.workspaces[state.active] = cleaned.windows
             state.focusedIndices[state.active] = focusedIndex
+            if cleaned.windows != originalWindows { state.pruneMetadata() }
             if cleaned.windows != originalWindows || focusedIndex != originalFocus {
                 onStateChange?()
             }
@@ -429,7 +447,7 @@ package final class Monitor {
         guard layout.frames.count == layout.windows.count else { return false }
 
         for i in layout.windows.indices {
-            guard let frame = layout.windows[i].getFrame() else { return false }
+            guard let frame = readFrame(layout.windows[i]) else { return false }
             guard framesMatch(frame, layout.frames[i], tolerance: tolerance) else { return false }
         }
 
@@ -437,13 +455,14 @@ package final class Monitor {
     }
 
     private func activeLayoutFrames(applyCleanup: Bool = true) -> (windows: [TrackedWindow], frames: [CGRect], screen: CGRect)? {
-        let snapshots = cleanActiveWorkspace(applyChanges: applyCleanup)
+        let snapshots = cleanActiveWorkspace(applyChanges: applyCleanup, attributesFor: windowAttributes)
         guard snapshots.count == state.workspaces[state.active].count else { return nil }
         guard !snapshots.contains(where: { !$0.attributes.fullscreenKnown || $0.isFullscreen }) else { return nil }
 
         let windows = snapshots
             .filter(\.isTileable)
             .map(\.window)
+            .filter { !state.isFloating($0) }
         let screen = WindowManager.screenFrame(for: self.screen)
         let frames = Tiler.calculateFrames(
             count: windows.count,
@@ -459,7 +478,7 @@ package final class Monitor {
     }
 
     private var activeFullscreenIndex: Int? {
-        state.workspaces[state.active].firstIndex { $0.isFullscreen() }
+        state.workspaces[state.active].firstIndex { windowAttributes($0)?.fullscreen == true }
     }
 
     private func framesMatch(_ lhs: CGRect, _ rhs: CGRect, tolerance: CGFloat) -> Bool {
@@ -467,11 +486,13 @@ package final class Monitor {
     }
 
     func canResizeMasterRatio(at point: CGPoint) -> Bool {
-        masterRatioFor(point: point, requireDividerHit: true) != nil
+        guard !paused else { return false }
+        return masterRatioFor(point: point, requireDividerHit: true) != nil
     }
 
     @discardableResult
     func resizeMasterRatio(at point: CGPoint) -> Bool {
+        guard !paused else { return false }
         guard let ratio = masterRatioFor(point: point, requireDividerHit: false) else { return false }
         Config.shared.masterRatio = ratio
         retile()
@@ -479,7 +500,8 @@ package final class Monitor {
     }
 
     private func masterRatioFor(point: CGPoint, requireDividerHit: Bool) -> CGFloat? {
-        guard !activeWorkspaceIsFullscreen,
+        guard !paused,
+              !activeWorkspaceIsFullscreen,
               state.layouts[state.active] == .tile,
               activeTileableWindowCount > 1
         else { return nil }
@@ -498,7 +520,7 @@ package final class Monitor {
 
     private var activeTileableWindowCount: Int {
         var count = 0
-        for window in state.workspaces[state.active] where window.isTileable() {
+        for window in state.workspaces[state.active] where windowAttributes(window)?.isTileable == true && !state.isFloating(window) {
             count += 1
             if count > 1 { return count }
         }
@@ -507,6 +529,7 @@ package final class Monitor {
 
     package func resizeWorkspaces(to count: Int) {
         state.resize(to: count)
+        reconcileVisibility()
     }
 
     func saveFocusedIndex() {
@@ -522,6 +545,14 @@ package final class Monitor {
 
     func copyState(from source: Monitor) {
         state = source.state
+        let bounds = WindowManager.screenFrame(for: screen)
+        for window in state.workspaces.flatMap({ $0 }) {
+            guard let frame = state.parkedFrame(for: window) else { continue }
+            state.updateParkedFrame(
+                WorkspaceWindows.framePreservingSizeInsideScreen(frame, screen: bounds),
+                for: window
+            )
+        }
     }
 
     func resetState() {
@@ -532,12 +563,54 @@ package final class Monitor {
 
     /// Place the active workspace on screen before moving the previous workspace offscreen
     /// so the desktop is not exposed between AX updates.
-    private func revealActiveWorkspace(hiding previous: Int) {
-        retile()
-        let screen = WindowManager.screenRect(for: self.screen)
-        for win in state.workspaces[previous] {
-            win.hideOffscreen(screen)
+    func revealActiveWorkspace(hiding previous: Int) {
+        for window in state.workspaces[state.active] where paused || state.isFloating(window) {
+            reveal(window)
         }
+        if !paused { retile() }
+        for window in state.workspaces[previous] { park(window) }
+    }
+
+    func park(_ window: TrackedWindow) {
+        guard isEligibleForGeometry(window) else { return }
+        let screen = WindowManager.screenRect(for: self.screen)
+        guard let frame = readFrame(window) else { return }
+        if WorkspaceWindows.isHiddenOffscreen(frame: frame, screen: screen) { return }
+        state.captureParkedFrame(frame, for: window)
+        let position = CGPoint(x: screen.origin.x + 1 - screen.width, y: screen.maxY - 1)
+        _ = moveWindow(window, position)
+    }
+
+    func reveal(_ window: TrackedWindow) {
+        guard isEligibleForGeometry(window), let frame = state.parkedFrame(for: window) else { return }
+        if writeFrame(window, frame) {
+            state.clearParkedFrame(for: window)
+        }
+    }
+
+    func transferGeometry(of window: TrackedWindow, from frame: CGRect, parked: Bool = false) {
+        guard isEligibleForGeometry(window) else { return }
+        let targetFrame = WorkspaceWindows.framePreservingSizeInsideScreen(
+            frame, screen: WindowManager.screenFrame(for: screen)
+        )
+        guard writeFrame(window, targetFrame) else { return }
+        state.clearParkedFrame(for: window)
+        if parked { park(window) }
+    }
+
+    func geometryForTransfer(_ window: TrackedWindow) -> CGRect? {
+        state.parkedFrame(for: window) ?? readFrame(window)
+    }
+
+    func reconcileVisibility() {
+        for (index, windows) in state.workspaces.enumerated() {
+            if index == state.active {
+                for window in windows where state.parkedFrame(for: window) != nil { reveal(window) }
+            } else {
+                for window in windows { park(window) }
+            }
+        }
+        if !paused { retile() }
     }
 
     private func focusInActiveLayout(_ window: TrackedWindow) {
@@ -569,9 +642,15 @@ package final class Monitor {
         let screen = WindowManager.screenFrame(for: self.screen)
         for ws in state.workspaces {
             for win in ws {
-                guard !win.isFullscreen() else { continue }
-                guard let frame = win.getFrame() else { continue }
-                win.setFrame(WorkspaceWindows.framePreservingSizeInsideScreen(frame, screen: screen))
+                guard isEligibleForGeometry(win) else { continue }
+                let frame = state.parkedFrame(for: win) ?? readFrame(win)
+                guard let frame else { continue }
+                let restored = WorkspaceWindows.framePreservingSizeInsideScreen(frame, screen: screen)
+                if writeFrame(win, restored) {
+                    state.clearParkedFrame(for: win)
+                } else {
+                    state.updateParkedFrame(restored, for: win)
+                }
             }
         }
     }

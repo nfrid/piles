@@ -12,6 +12,7 @@ package final class WorkspaceManager {
 
     private(set) var monitors: [Monitor] = []
     private(set) var focusedMonitorIndex: Int = 0
+    private(set) var isPaused = false
     private var screenChangeWork: DispatchWorkItem?
     private lazy var externalFocus = ExternalFocusCoordinator(host: self)
     private var locationIndex: [WindowIdentityKey: LocatedWindow] = [:]
@@ -34,13 +35,64 @@ package final class WorkspaceManager {
             placement.monitor.addWindow(
                 window,
                 workspace: placement.assignment?.workspace,
-                position: placement.assignment?.position
+                position: placement.assignment?.position,
+                floating: placement.assignment?.floating ?? false
             )
         }
         for monitor in monitors {
             monitor.retile()
         }
         commitChanges()
+    }
+
+    func setPaused(_ paused: Bool) {
+        guard isPaused != paused else { return }
+        isPaused = paused
+        for monitor in monitors {
+            monitor.paused = paused
+            if paused { monitor.cancelPendingWork() }
+        }
+        if paused { commitChanges() }
+        else { _ = rescan() }
+    }
+
+    func togglePaused() { setPaused(!isPaused) }
+
+    @discardableResult
+    func setFocusedFloating(_ floating: Bool) -> Bool {
+        guard !monitors.isEmpty,
+              let focused = WindowManager.focusedWindow(),
+              let (monitor, window) = trackedWindow(matching: focused)
+        else { return false }
+        return setFloating(floating, window: window, on: monitor)
+    }
+
+    @discardableResult
+    func toggleFocusedFloating() -> Bool {
+        guard !monitors.isEmpty,
+              let focused = WindowManager.focusedWindow(),
+              let (monitor, window) = trackedWindow(matching: focused)
+        else { return false }
+        return setFloating(!monitor.state.isFloating(window), window: window, on: monitor)
+    }
+
+    private func setFloating(_ floating: Bool, window: TrackedWindow, on monitor: Monitor) -> Bool {
+        guard monitor.state.isFloating(window) != floating else { return false }
+        monitor.state.setFloating(floating, for: window)
+        if !isPaused { monitor.retile() }
+        commitChanges()
+        return true
+    }
+
+    private func trackedWindow(matching focused: TrackedWindow) -> (Monitor, TrackedWindow)? {
+        for monitor in monitors {
+            for workspace in monitor.workspaces {
+                if let window = workspace.first(where: { $0 == focused }) {
+                    return (monitor, window)
+                }
+            }
+        }
+        return nil
     }
 
     func switchTo(_ index: Int, hudDirection: Int? = nil) {
@@ -144,7 +196,8 @@ package final class WorkspaceManager {
         let result = placement.monitor.addWindow(
             window,
             workspace: placement.assignment?.workspace,
-            position: placement.assignment?.position
+            position: placement.assignment?.position,
+            floating: placement.assignment?.floating ?? false
         )
         if result == .inserted, commit {
             commitChanges()
@@ -246,13 +299,18 @@ package final class WorkspaceManager {
         guard let focused = WindowManager.focusedWindow() else { return }
 
         let source = focusedMonitor
+        let frame = source.geometryForTransfer(focused)
         guard let removed = source.state.removeActiveWindow(matching: focused) else { return }
+        let metadata = source.state.metadata(for: removed)
+        source.state.removeMetadata(for: removed)
         let moved = focused.keepingMembers(from: removed)
         source.retile()
 
         let targetIndex = (focusedMonitorIndex + offset + monitors.count) % monitors.count
         let target = monitors[targetIndex]
-        target.insertWindow(moved)
+        target.insertWindow(moved, floating: metadata?.floating ?? false)
+        target.state.adoptMetadata(metadata, for: moved)
+        if let frame { target.transferGeometry(of: moved, from: frame) }
         target.focusedIndices[target.active] = 0
         target.retile()
 
@@ -289,13 +347,12 @@ package final class WorkspaceManager {
         guard let location = locateWindow(pid: pid, element: element) else { return false }
         let monitor = monitors[location.monitorIndex]
         if monitor.active == location.workspaceIndex {
-            monitor.scheduleCorrectiveRetile()
+            let window = monitor.workspaces[location.workspaceIndex][location.windowIndex]
+            if !monitor.state.isFloating(window) { monitor.scheduleCorrectiveRetile() }
             return true
         }
         let window = monitor.workspaces[location.workspaceIndex][location.windowIndex]
-        if window.isTileable() {
-            window.hideOffscreen(WindowManager.screenRect(for: monitor.screen))
-        }
+        monitor.park(window)
         return true
     }
 
@@ -330,9 +387,24 @@ package final class WorkspaceManager {
         let currentIDs = Set(monitors.map { $0.displayID })
         for (id, oldMonitor) in old where !currentIDs.contains(id) {
             let target = monitors[0]
-            for ws in oldMonitor.workspaces {
-                for window in ws where !target.containsWindow(window) {
-                    target.insertWindow(window)
+            for (workspaceIndex, windows) in oldMonitor.workspaces.enumerated() {
+                for window in windows where !target.containsWindow(window) {
+                    let metadata = oldMonitor.state.metadata(for: window)
+                    let destination = target.state.resolvedWorkspaceIndex(workspaceIndex + 1)
+                    target.insertWindow(
+                        window,
+                        floating: metadata?.floating ?? false,
+                        workspace: destination + 1,
+                        position: target.workspaces[destination].count + 1
+                    )
+                    target.state.adoptMetadata(metadata, for: window)
+                    if let frame = oldMonitor.geometryForTransfer(window) {
+                        target.transferGeometry(
+                            of: window,
+                            from: frame,
+                            parked: destination != target.active
+                        )
+                    }
                 }
             }
         }
@@ -354,7 +426,7 @@ package final class WorkspaceManager {
         }
 
         for monitor in monitors {
-            monitor.retile()
+            monitor.reconcileVisibility()
         }
         commitChanges()
     }
@@ -424,7 +496,7 @@ package final class WorkspaceManager {
             syncWindows(pid: batch.pid, windows: batch.windows, commit: false)
             WindowObserver.shared.observeRescanWindows(batch.windows, pid: batch.pid)
         }
-        for monitor in monitors { monitor.retile() }
+        for monitor in monitors { monitor.reconcileVisibility() }
         commitChanges()
         return RescanReport(discoveredWindows: inventory.windows.count,
                             unavailableApplications: inventory.unavailableApplications)
@@ -440,6 +512,7 @@ package final class WorkspaceManager {
             }
             .sorted { $0.screen.frame.origin.x < $1.screen.frame.origin.x }
         for monitor in monitors {
+            monitor.paused = isPaused
             monitor.onStateChange = { [weak self] in self?.commitChanges() }
         }
     }
@@ -588,7 +661,13 @@ package final class WorkspaceManager {
             return (monitors[monitor - 1], assignment)
         }
 
-        if assignment != nil {
+        if let assignment {
+            if assignment.floating != nil,
+               assignment.monitor == nil,
+               assignment.workspace == nil,
+               assignment.position == nil {
+                return (monitorForWindow(window), assignment)
+            }
             return (focusedMonitor, assignment)
         }
 
