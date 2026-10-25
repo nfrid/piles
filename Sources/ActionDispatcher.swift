@@ -45,6 +45,14 @@ package enum ActionDispatcher {
             MainThread.run { WorkspaceManager.shared.swapMaster() }
         case .toggleLayout:
             MainThread.run { WorkspaceManager.shared.toggleLayout() }
+        case .setPaused(let paused):
+            MainThread.run { WorkspaceManager.shared.setPaused(paused) }
+        case .togglePause:
+            MainThread.run { WorkspaceManager.shared.togglePaused() }
+        case .setFloating(let floating):
+            MainThread.run { WorkspaceManager.shared.setFocusedFloating(floating) }
+        case .toggleFloating:
+            MainThread.run { WorkspaceManager.shared.toggleFocusedFloating() }
         case .toggleWorkspaceOverview:
             MainThread.run { WorkspaceOverview.shared.toggle() }
         case .toggleWorkspaceGlance:

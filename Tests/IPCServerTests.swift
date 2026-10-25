@@ -84,6 +84,18 @@ enum IPCServerTests {
                     try? JSONDecoder().decode(DiagnosticsWindows.self, from: Data($0.utf8))
                 }
                 check(windows?.windows.isEmpty == true, "windows returns a valid empty snapshot over IPC")
+                defer { WorkspaceManager.shared.setPaused(false) }
+                check(queryPumpingMain("pause\n", path: path) == "ok\n", "pause is accepted over temporary IPC")
+                let paused = queryPumpingMain("status\n", path: path).flatMap {
+                    try? JSONDecoder().decode(DiagnosticsStatus.self, from: Data($0.utf8))
+                }
+                check(paused?.paused == true, "pause is visible in IPC diagnostics")
+                check(queryPumpingMain("toggle\n", path: path) == "ok\n" && !WorkspaceManager.shared.isPaused,
+                      "toggle resumes an empty manager without scanning real windows")
+                check(queryPumpingMain("resume\n", path: path) == "ok\n" && !WorkspaceManager.shared.isPaused,
+                      "resume is idempotent over IPC")
+                check(queryPumpingMain("window floating toggle\n", path: path) == "ok\n",
+                      "floating command safely does nothing without tracked monitors")
                 let rescan = queryPumpingMain("rescan\n", path: path).flatMap {
                     (try? JSONSerialization.jsonObject(with: Data($0.utf8))) as? [String: Int]
                 }

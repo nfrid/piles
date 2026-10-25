@@ -86,6 +86,8 @@ The default modifier is option. You can change it to `control` or `command` in
 | option+shift+j / option+shift+k          | move focused window next / previous                       |
 | option+return                            | swap focused window into master                           |
 | option+m                                 | toggle monocle / tile on the active workspace             |
+| option+p                                 | pause / resume automatic tiling                           |
+| option+f                                 | toggle floating for the focused window                    |
 | option+comma / option+period             | focus previous / next monitor                             |
 | option+shift+comma / option+shift+period | move focused window to previous / next monitor            |
 | option+shift+return                      | run the default custom command: `open -n -a Terminal`     |
@@ -121,6 +123,8 @@ You can remap built-in actions:
 focus_next = "j"
 focus_prev = "k"
 toggle_layout = "m"
+toggle_pause = "p"
+toggle_floating = "f"
 last_workspace = "tab"
 ```
 
@@ -145,6 +149,50 @@ position = 1
 
 First matching assignment wins. `monitor`, `workspace`, and `position` are
 1-based.
+
+## Pause and floating windows
+
+Use option+p or the menu's Pause Tiling / Resume Tiling item to pause. The menu
+bar shows `paused`. IPC has the same controls:
+
+```bash
+piles-ctl pause
+piles-ctl resume
+piles-ctl toggle
+```
+
+Pause stops automatic tiling, corrective resize, and master-divider dragging.
+Workspace switching and focus commands still work. Windows on inactive
+workspaces stay hidden; when switching while paused, piles restores their saved
+position and size rather than applying a layout. Resume discovers windows again
+and retiles active workspaces. Pause is temporary and does not survive a restart.
+
+Use option+f, the menu's Floating Window item, or these commands for the focused
+tracked window:
+
+```bash
+piles-ctl window floating toggle
+piles-ctl window floating on
+piles-ctl window floating off
+```
+
+Floating windows keep their workspace, focus order, and entry in the window
+lists. They do not take a tile slot and piles does not correct their manual
+position or size. Switching workspaces hides and restores them with their saved
+geometry. Switching floating off puts the window back into the current layout,
+unless tiling is paused. Per-window choices last for the lifetime of that window.
+
+Set the initial mode of newly discovered windows with existing assignment rules:
+
+```toml
+[[assign]]
+bundle_id = "com.apple.calculator"
+floating = true
+```
+
+The first matching rule still wins. `floating = false` explicitly starts windows
+in tiling mode. A floating-only rule does not move the window to another monitor.
+Reloading config does not override manual choices for windows already tracked.
 
 ## IPC (`piles-ctl`)
 
@@ -203,11 +251,11 @@ piles-ctl status
 piles-ctl windows
 ```
 
-`status` lists monitors and their workspaces, layouts, and window counts.
+`status` reports `paused` and lists monitors and their workspaces, layouts, and window counts.
 `focused_monitor`, monitor indices, workspace indices, and `active_workspace`
 are 1-based. `windows` lists tracked windows in monitor/workspace/stack order,
 including windows on inactive workspaces. Each window has its PID, monitor,
-workspace, and an `active` flag that means its workspace is active on that
+workspace, a `floating` flag, and an `active` flag that means its workspace is active on that
 monitor. App name, bundle ID, title, and frame are optional when unavailable.
 Frame coordinates use the Accessibility coordinate system, with the origin at
 the primary display's top-left corner; offscreen positions can be negative.

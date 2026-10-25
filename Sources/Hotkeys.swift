@@ -16,6 +16,10 @@ package enum HotkeyAction: Equatable {
     case moveFocusedWindowPrev
     case swapMaster
     case toggleLayout
+    case setPaused(Bool)
+    case togglePause
+    case setFloating(Bool)
+    case toggleFloating
     case toggleWorkspaceOverview
     case toggleWorkspaceGlance
     case closeActiveWindow
@@ -63,6 +67,8 @@ package struct HotkeyResolver {
         if matches(keyCode, hasShift, b.movePrev) { return .moveFocusedWindowPrev }
         if matches(keyCode, hasShift, b.swapMaster) { return .swapMaster }
         if matches(keyCode, hasShift, b.toggleLayout) { return .toggleLayout }
+        if matches(keyCode, hasShift, b.togglePause) { return .togglePause }
+        if matches(keyCode, hasShift, b.toggleFloating) { return .toggleFloating }
         if matches(keyCode, hasShift, b.workspaceOverview) { return .toggleWorkspaceOverview }
         if matches(keyCode, hasShift, b.workspaceGlance) { return .toggleWorkspaceGlance }
         if matches(keyCode, hasShift, b.closeActiveWindow) { return .closeActiveWindow }

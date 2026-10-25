@@ -39,6 +39,14 @@ package enum IPCCommandParser {
             guard parts.count == 1 else { return .failure(.invalid("rescan takes no arguments")) }
             return .success(.rescan)
 
+        case "pause", "resume", "toggle":
+            guard parts.count == 1 else { return .failure(.invalid("\(verb) takes no arguments")) }
+            switch verb {
+            case "pause": return .success(.action(.setPaused(true)))
+            case "resume": return .success(.action(.setPaused(false)))
+            default: return .success(.action(.togglePause))
+            }
+
         case "workspace":
             return parseWorkspace(parts.dropFirst(), workspaceCount: workspaceCount()).map(IPCCommand.action)
 
@@ -128,7 +136,7 @@ package enum IPCCommandParser {
 
     private static func parseWindow(_ parts: ArraySlice<String>) -> Result<HotkeyAction, ParseError> {
         guard let sub = parts.first?.lowercased() else {
-            return .failure(.invalid("window expects: close | move next | move prev"))
+            return .failure(.invalid("window expects: close | move next | move prev | floating on | floating off | floating toggle"))
         }
         switch sub {
         case "close":
@@ -136,6 +144,16 @@ package enum IPCCommandParser {
                 return .failure(.invalid("window close takes no arguments"))
             }
             return .success(.closeActiveWindow)
+        case "floating":
+            guard parts.count == 2, let mode = parts.last?.lowercased() else {
+                return .failure(.invalid("window floating expects: on | off | toggle"))
+            }
+            switch mode {
+            case "on": return .success(.setFloating(true))
+            case "off": return .success(.setFloating(false))
+            case "toggle": return .success(.toggleFloating)
+            default: return .failure(.invalid("window floating expects: on | off | toggle"))
+            }
         case "move":
             guard parts.count == 2, let dir = parts.dropFirst().first?.lowercased() else {
                 return .failure(.invalid("window expects: move next | move prev"))
@@ -146,7 +164,7 @@ package enum IPCCommandParser {
             default: return .failure(.invalid("window expects: move next | move prev"))
             }
         default:
-            return .failure(.invalid("window expects: close | move next | move prev"))
+            return .failure(.invalid("window expects: close | move next | move prev | floating on | floating off | floating toggle"))
         }
     }
 

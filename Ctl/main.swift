@@ -10,6 +10,7 @@ private func printUsage() {
           status
           windows
           rescan
+          pause | resume | toggle
           rescue
           config validate [PATH]
           workspace <1-9> [--move]
@@ -20,6 +21,7 @@ private func printUsage() {
           focus next|prev
           window move next|prev
           window close
+          window floating on|off|toggle
           layout toggle
           master swap
           monitor focus next|prev

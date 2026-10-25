@@ -103,6 +103,8 @@ package struct BuiltinBindings {
     var workspacePrev: (key: UInt16, shift: Bool) = (Key.h, false)
     var swapMaster: (key: UInt16, shift: Bool) = (Key.return, false)
     var toggleLayout: (key: UInt16, shift: Bool) = (Key.m, false)
+    var togglePause: (key: UInt16, shift: Bool) = (Key.p, false)
+    var toggleFloating: (key: UInt16, shift: Bool) = (Key.f, false)
     var focusMonitorPrev: (key: UInt16, shift: Bool) = (Key.comma, false)
     var focusMonitorNext: (key: UInt16, shift: Bool) = (Key.period, false)
     var moveMonitorPrev: (key: UInt16, shift: Bool) = (Key.comma, true)
@@ -124,6 +126,8 @@ private let builtinBindingKeys: [(name: String, keyPath: BuiltinBindingKeyPath)]
     ("workspace_prev", \.workspacePrev),
     ("swap_master", \.swapMaster),
     ("toggle_layout", \.toggleLayout),
+    ("toggle_pause", \.togglePause),
+    ("toggle_floating", \.toggleFloating),
     ("focus_monitor_prev", \.focusMonitorPrev),
     ("focus_monitor_next", \.focusMonitorNext),
     ("move_monitor_prev", \.moveMonitorPrev),
@@ -142,6 +146,7 @@ package struct WindowAssignment {
     let monitor: Int?
     let workspace: Int?
     let position: Int?
+    let floating: Bool?
 
     package init(
         app: String? = nil,
@@ -150,7 +155,8 @@ package struct WindowAssignment {
         titleContains: String? = nil,
         monitor: Int? = nil,
         workspace: Int? = nil,
-        position: Int? = nil
+        position: Int? = nil,
+        floating: Bool? = nil
     ) {
         self.app = app
         self.bundleID = bundleID
@@ -159,6 +165,7 @@ package struct WindowAssignment {
         self.monitor = monitor
         self.workspace = workspace
         self.position = position
+        self.floating = floating
     }
 
     func matches(app: String?, bundleID: String?, title: String?) -> Bool {
@@ -287,7 +294,7 @@ package enum ConfigParser {
         diagnoseArrayEntries(toml["assign"], context: "assign",
                              types: ["app": String.self, "bundle_id": String.self, "title": String.self,
                                      "title_contains": String.self, "monitor": Int.self, "workspace": Int.self,
-                                     "position": Int.self], diagnose: diagnose)
+                                     "position": Int.self, "floating": Bool.self], diagnose: diagnose)
         diagnoseArrayEntries(toml["workspace"], context: "workspace",
                              types: ["index": Int.self, "name": String.self, "color": String.self], diagnose: diagnose)
         var config = Config()
@@ -547,7 +554,8 @@ package enum ConfigParser {
                 titleContains: titleContains,
                 monitor: monitor,
                 workspace: workspace,
-                position: position
+                position: position,
+                floating: entry["floating"] as? Bool
             )
         }
     }

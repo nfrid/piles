@@ -548,7 +548,7 @@ package final class Monitor {
         let bounds = WindowManager.screenFrame(for: screen)
         for window in state.workspaces.flatMap({ $0 }) {
             guard let frame = state.parkedFrame(for: window) else { continue }
-            state.updateParkedFrame(
+            state.saveParkedFrame(
                 WorkspaceWindows.framePreservingSizeInsideScreen(frame, screen: bounds),
                 for: window
             )
@@ -576,7 +576,7 @@ package final class Monitor {
         let screen = WindowManager.screenRect(for: self.screen)
         guard let frame = readFrame(window) else { return }
         if WorkspaceWindows.isHiddenOffscreen(frame: frame, screen: screen) { return }
-        state.captureParkedFrame(frame, for: window)
+        state.saveParkedFrame(frame, for: window)
         let position = CGPoint(x: screen.origin.x + 1 - screen.width, y: screen.maxY - 1)
         _ = moveWindow(window, position)
     }
@@ -649,7 +649,7 @@ package final class Monitor {
                 if writeFrame(win, restored) {
                     state.clearParkedFrame(for: win)
                 } else {
-                    state.updateParkedFrame(restored, for: win)
+                    state.saveParkedFrame(restored, for: win)
                 }
             }
         }

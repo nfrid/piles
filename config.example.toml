@@ -46,6 +46,8 @@
 # workspace_prev = "h"
 # swap_master = "return"
 # toggle_layout = "m"
+# toggle_pause = "p"
+# toggle_floating = "f"
 # focus_monitor_prev = "comma"
 # focus_monitor_next = "period"
 # move_monitor_prev = "shift+comma"
@@ -61,12 +63,15 @@
 # command = "open -n -a Terminal"
 
 # window assignment rules
+# floating = true excludes matched new windows from tiling, not from workspaces
+# rules containing only floating leave the monitor and workspace placement unchanged
 # first matching rule wins; monitor, workspace, and position are 1-based
 # match by any combination of app, bundle_id, title, and title_contains
 # [[assign]]
 # app = "Terminal"
 # workspace = 1
 # position = 1
+# floating = true
 #
 # [[assign]]
 # bundle_id = "com.apple.Safari"

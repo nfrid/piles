@@ -168,20 +168,7 @@ package struct MonitorState {
         for key in window.identityKeys { windowMetadata[key] = metadata }
     }
 
-    mutating func rememberParkedFrame(_ frame: CGRect, for window: TrackedWindow) {
-        var metadata = window.identityKeys.compactMap { windowMetadata[$0] }.first ?? WindowMetadata()
-        guard metadata.parkedFrame == nil else { return }
-        metadata.parkedFrame = frame
-        for key in window.identityKeys { windowMetadata[key] = metadata }
-    }
-
-    mutating func updateParkedFrame(_ frame: CGRect, for window: TrackedWindow) {
-        guard var metadata = window.identityKeys.compactMap({ windowMetadata[$0] }).first else { return }
-        metadata.parkedFrame = frame
-        for key in window.identityKeys { windowMetadata[key] = metadata }
-    }
-
-    mutating func captureParkedFrame(_ frame: CGRect, for window: TrackedWindow) {
+    mutating func saveParkedFrame(_ frame: CGRect, for window: TrackedWindow) {
         var metadata = window.identityKeys.compactMap { windowMetadata[$0] }.first ?? WindowMetadata()
         metadata.parkedFrame = frame
         for key in window.identityKeys { windowMetadata[key] = metadata }

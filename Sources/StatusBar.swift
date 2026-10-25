@@ -1,11 +1,13 @@
 import AppKit
 
-package final class StatusBar: NSObject {
+package final class StatusBar: NSObject, NSMenuDelegate {
     package static let shared = StatusBar()
 
     private let statusItem: NSStatusItem
     private let menu: NSMenu
     private let stackView: NSStackView
+    private let pauseItem = NSMenuItem(title: "Pause Tiling", action: #selector(togglePause), keyEquivalent: "")
+    private let floatingItem = NSMenuItem(title: "Floating Window", action: #selector(toggleFloating), keyEquivalent: "")
     private var lastState: StatusState?
     private var badgeViews: [Int: BadgeView] = [:]
     private var indicatorView: LayoutIndicatorView?
@@ -20,6 +22,13 @@ package final class StatusBar: NSObject {
         stackView.edgeInsets = NSEdgeInsets(top: 0, left: 4, bottom: 0, right: 4)
         stackView.translatesAutoresizingMaskIntoConstraints = false
 
+        menu.delegate = self
+        menu.autoenablesItems = false
+        pauseItem.target = self
+        floatingItem.target = self
+        menu.addItem(pauseItem)
+        menu.addItem(floatingItem)
+        menu.addItem(NSMenuItem.separator())
         let reloadItem = NSMenuItem(title: "Reload Config", action: #selector(reloadConfig), keyEquivalent: "r")
         reloadItem.target = self
         menu.addItem(reloadItem)
@@ -30,6 +39,25 @@ package final class StatusBar: NSObject {
         installStackView()
 
         update()
+    }
+
+    @objc private func togglePause() {
+        WorkspaceManager.shared.togglePaused()
+    }
+
+    @objc private func toggleFloating() {
+        WorkspaceManager.shared.toggleFocusedFloating()
+    }
+
+    package func menuWillOpen(_ menu: NSMenu) {
+        guard let focused = WindowManager.focusedWindow(),
+              let monitor = WorkspaceManager.shared.monitors.first(where: { $0.containsWindow(focused) }) else {
+            floatingItem.isEnabled = false
+            floatingItem.state = .off
+            return
+        }
+        floatingItem.isEnabled = true
+        floatingItem.state = monitor.state.isFloating(focused) ? .on : .off
     }
 
     @objc private func reloadConfig() {
@@ -65,15 +93,18 @@ package final class StatusBar: NSObject {
         let state = StatusState.capture(ws)
         guard state != lastState else { return }
         lastState = state
+        pauseItem.title = state.isPaused ? "Resume Tiling" : "Pause Tiling"
+        pauseItem.state = state.isPaused ? .on : .off
 
         let font = NSFont.menuBarFont(ofSize: 0)
         let fontSize = font.pointSize
 
         var orderedViews: [NSView] = []
 
-        // Monitor indicator (only with multiple monitors)
-        if state.monitorCount > 1 {
-            let text = "\(state.focusedMonitorIndex + 1):"
+        // Keep the paused state visible without opening the menu.
+        if state.isPaused || state.monitorCount > 1 {
+            let monitorText = state.monitorCount > 1 ? "\(state.focusedMonitorIndex + 1):" : ""
+            let text = state.isPaused ? "paused \(monitorText)".trimmingCharacters(in: .whitespaces) : monitorText
             let accent = state.appearance.accent.primary
             if let existing = indicatorView {
                 existing.apply(text: text, accentColor: accent)
@@ -250,6 +281,7 @@ private final class BadgeView: NSView {
 }
 
 private struct StatusState: Equatable {
+    let isPaused: Bool
     let monitorCount: Int
     let focusedMonitorIndex: Int
     let activeWorkspace: Int
@@ -260,6 +292,7 @@ private struct StatusState: Equatable {
         let appearance = Config.shared.appearanceSnapshot
         guard !ws.monitors.isEmpty else {
             return StatusState(
+                isPaused: ws.isPaused,
                 monitorCount: 0, focusedMonitorIndex: 0, activeWorkspace: 0,
                 occupiedWorkspaces: [], appearance: appearance
             )
@@ -267,6 +300,7 @@ private struct StatusState: Equatable {
         let monitor = ws.focusedMonitor
         let occupied = (0..<Config.shared.workspaceCount).map { !monitor.workspaces[$0].isEmpty }
         return StatusState(
+            isPaused: ws.isPaused,
             monitorCount: ws.monitors.count,
             focusedMonitorIndex: ws.focusedMonitorIndex,
             activeWorkspace: monitor.active,

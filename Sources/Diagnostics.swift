@@ -15,6 +15,7 @@ package struct DiagnosticsWindow: Codable, Equatable {
     package let monitor: Int
     package let workspace: Int
     package let active: Bool
+    package let floating: Bool
     package let frame: DiagnosticsFrame?
 }
 
@@ -33,6 +34,7 @@ package struct DiagnosticsMonitor: Codable, Equatable {
 }
 
 package struct DiagnosticsStatus: Codable, Equatable {
+    package let paused: Bool
     package let focused_monitor: Int?
     package let monitors: [DiagnosticsMonitor]
 }
@@ -51,15 +53,18 @@ package enum DiagnosticsSnapshot {
     package static func status(from workspace: WorkspaceManager) -> DiagnosticsStatus {
         status(
             focusedMonitorIndex: workspace.monitors.isEmpty ? nil : workspace.focusedMonitorIndex,
-            sources: sources(from: workspace)
+            sources: sources(from: workspace),
+            paused: workspace.isPaused
         )
     }
 
     package static func status(
         focusedMonitorIndex: Int?,
-        sources: [DiagnosticsMonitorSource]
+        sources: [DiagnosticsMonitorSource],
+        paused: Bool = false
     ) -> DiagnosticsStatus {
         DiagnosticsStatus(
+            paused: paused,
             focused_monitor: focusedMonitorIndex.map { $0 + 1 },
             monitors: sources.enumerated().map { monitorIndex, source in
                 DiagnosticsMonitor(
@@ -106,6 +111,7 @@ package enum DiagnosticsSnapshot {
                         monitor: monitorIndex + 1,
                         workspace: workspaceIndex + 1,
                         active: workspaceIndex == source.state.active,
+                        floating: source.state.isFloating(window),
                         frame: frameSnapshot(frame(window))
                     )
                 }

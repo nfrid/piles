@@ -17,6 +17,39 @@ enum ConfigTests {
         }
 
         do {
+            let text = """
+            [bindings]
+            toggle_pause = "shift+p"
+            toggle_floating = "f"
+            [[assign]]
+            title_contains = "Settings"
+            floating = true
+            [[assign]]
+            app = "Terminal"
+            floating = false
+            workspace = 2
+            [[assign]]
+            app = "Finder"
+            workspace = 1
+            """
+            check(ConfigParser.validate(text: text).isEmpty, "pause and floating configuration validates")
+            if let config = ConfigParser.parse(text: text) {
+                check(config.bindings.togglePause == (Key.p, true) && config.bindings.toggleFloating == (Key.f, false),
+                      "pause and floating bindings use the existing parser")
+                check(config.assignment(app: "Terminal", bundleID: nil, title: "Settings")?.floating == true,
+                      "first matching floating rule wins")
+                check(config.assignment(app: "Terminal", bundleID: nil, title: "Shell")?.floating == false,
+                      "explicit tiled assignment is preserved")
+                check(config.assignments.count == 3 && config.assignments[2].floating == nil,
+                      "old assignment rules do not implicitly specify a floating mode")
+            } else {
+                check(false, "new window mode configuration parses")
+            }
+            check(ConfigParser.validate(text: "[[assign]]\napp = \"Terminal\"\nfloating = \"yes\"")
+                .contains(where: { $0.contains("floating") && $0.contains("boolean") }), "floating rule requires a boolean")
+        }
+
+        do {
             let valid = ConfigParser.validate(text: """
             workspace_count = 3
             master_ratio = 0.6

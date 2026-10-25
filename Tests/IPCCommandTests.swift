@@ -49,6 +49,18 @@ enum IPCCommandTests {
         check(IPCCommandParser.parse("rescan", workspaceCount: 9) == .success(.rescan), "rescan parses")
         rejects("rescan now")
         rejects("rescue")
+        resolves("pause", to: .setPaused(true))
+        resolves("resume", to: .setPaused(false))
+        resolves("toggle", to: .togglePause)
+        resolves("window floating on", to: .setFloating(true))
+        resolves("window floating off", to: .setFloating(false))
+        resolves("window floating toggle", to: .toggleFloating)
+        rejects("pause now")
+        rejects("resume now")
+        rejects("toggle now")
+        rejects("window floating")
+        rejects("window floating yes")
+        rejects("window floating on extra")
 
         resolves("workspace 3", to: .switchTo(2))
         resolves("\tworkspace\t3\n", to: .switchTo(2))
@@ -82,12 +94,14 @@ enum IPCCommandTests {
         firstState.active = 1
         var secondState = MonitorState(count: 1, defaultLayout: .monocle)
         secondState.workspaces[0] = [trackedWindow(4)]
+        firstState.setFloating(true, for: firstState.workspaces[1][0])
         let sources = [
             DiagnosticsMonitorSource(displayID: 10, name: "Left", state: firstState),
             DiagnosticsMonitorSource(displayID: 20, name: "Right", state: secondState),
         ]
 
-        let status = DiagnosticsSnapshot.status(focusedMonitorIndex: 1, sources: sources)
+        let status = DiagnosticsSnapshot.status(focusedMonitorIndex: 1, sources: sources, paused: true)
+        check(status.paused, "status reports pause state")
         check(status.focused_monitor == 2 && status.monitors.map(\.index) == [1, 2]
               && status.monitors.map(\.display_id) == [10, 20], "status factory uses 1-based monitor order")
         check(status.monitors[0].active_workspace == 2
@@ -113,6 +127,7 @@ enum IPCCommandTests {
               && windows.map(\.monitor) == [1, 1, 1, 2]
               && windows.map(\.workspace) == [1, 2, 2, 1], "windows factory preserves monitor/workspace/window ordering and uses 1-based indices")
         check(windows.map(\.active) == [false, true, true, true], "all windows in each active workspace are active")
+        check(windows.map(\.floating) == [false, true, false, false], "windows diagnostics report floating without changing order")
         check(windows[0].frame == DiagnosticsFrame(x: 1, y: 2, width: 3, height: 4)
               && windows[1].frame == nil && windows[2].frame == nil, "nil and nonfinite frames are unavailable")
         check(frameReads == 4, "windows snapshot reads each frame once")

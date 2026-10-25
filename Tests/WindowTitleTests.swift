@@ -15,6 +15,7 @@ enum WindowTitleTests {
         check(TrackedWindow.normalizedDisplayTitle("\u{180E}Firefox") == "Firefox", "strips leading MVS")
         check(TrackedWindow.normalizedDisplayTitle("\u{180E}\u{200D}Firefox") == "Firefox", "strips adjacent MVS and ZWJ")
         check(TrackedWindow.normalizedDisplayTitle("\u{180E}\u{200D}\u{180E}Firefox") == "Firefox", "strips only adjacent prefix marker scalars")
+        check(TrackedWindow.normalizedDisplayTitle("\u{180E}\u{200D}\u{200D}Firefox") == "Firefox", "strips adjacent scalars even when joiners form one grapheme")
         check(TrackedWindow.normalizedDisplayTitle("\u{180E}").isEmpty, "marker only becomes empty for fallback")
         check(TrackedWindow.normalizedDisplayTitle("  \u{180E}  Firefox  ") == "Firefox", "trims whitespace around marker title")
         check(TrackedWindow.normalizedDisplayTitle("  ").isEmpty, "whitespace title becomes empty for fallback")

@@ -229,10 +229,10 @@ struct TrackedWindow: Equatable {
 
     static func normalizedDisplayTitle(_ title: String) -> String {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.first == "\u{180E}" else { return trimmed }
+        guard trimmed.unicodeScalars.first?.value == 0x180E else { return trimmed }
 
-        let prefix = trimmed.drop(while: { $0 == "\u{180E}" || $0 == "\u{200D}" })
-        return String(prefix).trimmingCharacters(in: .whitespacesAndNewlines)
+        let remainder = trimmed.unicodeScalars.drop(while: { $0.value == 0x180E || $0.value == 0x200D })
+        return String(String.UnicodeScalarView(remainder)).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     func bundleID() -> String? {

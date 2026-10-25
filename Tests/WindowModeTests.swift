@@ -97,7 +97,7 @@ enum WindowModeTests {
         }
         parkedMonitor.state.workspaces[0] = [background]
         parkedMonitor.state.workspaces[1] = [foreground]
-        parkedMonitor.state.rememberParkedFrame(foregroundFrame, for: foreground)
+        parkedMonitor.state.saveParkedFrame(foregroundFrame, for: foreground)
         parkedMonitor.state.active = 1
         parkedMonitor.revealActiveWorkspace(hiding: 0)
         check(parkedFrames[foreground.pid] == foregroundFrame, "paused workspace reveal restores its manual frame")
@@ -108,6 +108,67 @@ enum WindowModeTests {
         check(parkedFrames[background.pid]?.size == backgroundFrame.size,
               "parking preserves the background window size")
 
+        let retryMonitor = Monitor(displayID: 0, screen: screen)
+        let retryWindow = testWindow(pid: 900_201)
+        retryMonitor.state.insertWindow(retryWindow, floating: true)
+        retryMonitor.isEligibleForGeometry = { _ in true }
+        var retryFrame: CGRect? = backgroundFrame
+        var writesAllowed = false
+        var retryMoves = 0
+        retryMonitor.readFrame = { _ in retryFrame }
+        retryMonitor.moveWindow = { _, point in
+            retryMoves += 1
+            guard writesAllowed, let current = retryFrame else { return false }
+            retryFrame = CGRect(origin: point, size: current.size)
+            return true
+        }
+        retryMonitor.writeFrame = { _, frame in
+            guard writesAllowed else { return false }
+            retryFrame = frame
+            return true
+        }
+        retryMonitor.park(retryWindow)
+        check(retryMonitor.state.parkedFrame(for: retryWindow) == backgroundFrame,
+              "failed park retains the original geometry for partially successful grouped writes")
+        let adjusted = CGRect(x: 180, y: 170, width: 600, height: 440)
+        retryFrame = adjusted
+        retryMonitor.park(retryWindow)
+        check(retryMonitor.state.parkedFrame(for: retryWindow) == adjusted,
+              "park retry captures a newer manual frame rather than stale failed-write geometry")
+        writesAllowed = true
+        retryMonitor.park(retryWindow)
+        retryMonitor.park(retryWindow)
+        check(retryMoves == 3 && retryMonitor.state.parkedFrame(for: retryWindow) == adjusted,
+              "repeated successful park never overwrites the saved frame with parked coordinates")
+        writesAllowed = false
+        retryMonitor.reveal(retryWindow)
+        check(retryMonitor.state.parkedFrame(for: retryWindow) == adjusted,
+              "failed reveal retains geometry for retry")
+        writesAllowed = true
+        retryMonitor.reveal(retryWindow)
+        check(retryFrame == adjusted && retryMonitor.state.parkedFrame(for: retryWindow) == nil,
+              "successful reveal retry restores and clears saved geometry")
+        retryFrame = nil
+        retryMonitor.park(retryWindow)
+        check(retryMoves == 3 && retryMonitor.state.parkedFrame(for: retryWindow) == nil,
+              "failed frame reads do not issue writes or invent saved geometry")
+
+        let pendingMonitor = Monitor(displayID: 0, screen: screen)
+        pendingMonitor.windowAttributes = { _ in trackable }
+        pendingMonitor.readFrame = { _ in nil }
+        var pendingWrites = 0
+        pendingMonitor.writeFrame = { _, _ in pendingWrites += 1; return true }
+        _ = pendingMonitor.addWindow(testWindow(pid: 900_202))
+        pendingMonitor.paused = true
+        var flushed = false
+        DispatchQueue.main.async { flushed = true }
+        let flushDeadline = Date().addingTimeInterval(1)
+        while !flushed && Date() < flushDeadline {
+            _ = RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.01))
+        }
+        check(flushed && pendingWrites == 0, "queued automatic retile rechecks pause before any writes")
+        pendingMonitor.cancelPendingWork()
+
         let overflowMonitor = Monitor(displayID: 0, screen: screen)
         let overflow = testWindow(pid: 9601)
         var overflowFrame = parkedFrame(backgroundFrame, screen)
@@ -116,7 +177,7 @@ enum WindowModeTests {
         overflowMonitor.readFrame = { _ in overflowFrame }
         overflowMonitor.writeFrame = { _, frame in overflowFrame = frame; return true }
         overflowMonitor.state.workspaces[1] = [overflow]
-        overflowMonitor.state.rememberParkedFrame(backgroundFrame, for: overflow)
+        overflowMonitor.state.saveParkedFrame(backgroundFrame, for: overflow)
         overflowMonitor.resizeWorkspaces(to: 1)
         check(overflowMonitor.state.workspaces[0] == [overflow] && overflowFrame == backgroundFrame,
               "workspace shrink reveals a parked window moved into the active workspace")
@@ -143,7 +204,7 @@ enum WindowModeTests {
         eligibleMonitor.writeFrame = { window, _ in eligibleWrites.append(window.pid); return true }
         eligibleMonitor.moveWindow = { window, _ in eligibleMoves.append(window.pid); return true }
         for window in [eligible, minimized, fullscreen, unknown] {
-            eligibleMonitor.state.rememberParkedFrame(CGRect(x: 10, y: 20, width: 300, height: 200), for: window)
+            eligibleMonitor.state.saveParkedFrame(CGRect(x: 10, y: 20, width: 300, height: 200), for: window)
             eligibleMonitor.park(window)
             eligibleMonitor.reveal(window)
         }
@@ -157,7 +218,7 @@ enum WindowModeTests {
         let transferred = testWindow(pid: 9801)
         let sourceFrame = CGRect(x: screen.frame.maxX - 20, y: screen.frame.minY - 30, width: 300, height: 200)
         source.state.insertWindow(transferred, floating: true)
-        source.state.rememberParkedFrame(sourceFrame, for: transferred)
+        source.state.saveParkedFrame(sourceFrame, for: transferred)
         target.paused = true
         target.isEligibleForGeometry = { _ in true }
         var transferredFrame: CGRect?
@@ -176,7 +237,7 @@ enum WindowModeTests {
         cachedSource.state.insertWindow(cachedWindow, floating: true)
         let outsideFrame = CGRect(x: screen.frame.maxX + 40, y: screen.frame.minY - 20,
                                   width: 250, height: 180)
-        cachedSource.state.rememberParkedFrame(outsideFrame, for: cachedWindow)
+        cachedSource.state.saveParkedFrame(outsideFrame, for: cachedWindow)
         cachedTarget.copyState(from: cachedSource)
         let clampedCachedFrame = WorkspaceWindows.framePreservingSizeInsideScreen(
             outsideFrame,
@@ -201,7 +262,7 @@ enum WindowModeTests {
         resizeMonitor.writeFrame = { window, frame in visibilityFrames[window.pid] = frame; return true }
         resizeMonitor.state.workspaces[0] = [active]
         resizeMonitor.state.workspaces[1] = [inactive]
-        resizeMonitor.state.rememberParkedFrame(foregroundFrame, for: active)
+        resizeMonitor.state.saveParkedFrame(foregroundFrame, for: active)
         resizeMonitor.reconcileVisibility()
         check(visibilityFrames[active.pid] == foregroundFrame, "visibility reconciliation reveals parked active windows")
         check(resizeMonitor.state.parkedFrame(for: inactive) != nil && visibilityMoves == [inactive.pid],
@@ -210,7 +271,7 @@ enum WindowModeTests {
         let cleanupMonitor = Monitor(displayID: 0, screen: screen)
         cleanupMonitor.state.workspaces[0] = [minimized]
         cleanupMonitor.state.setFloating(true, for: minimized)
-        cleanupMonitor.state.rememberParkedFrame(foregroundFrame, for: minimized)
+        cleanupMonitor.state.saveParkedFrame(foregroundFrame, for: minimized)
         _ = cleanupMonitor.cleanActiveWorkspace(attributesFor: { _ in minimizedAttributes })
         check(!cleanupMonitor.state.isFloating(minimized) && cleanupMonitor.state.parkedFrame(for: minimized) == nil,
               "cleanup prunes metadata for windows removed from the workspace")

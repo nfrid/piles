@@ -21,6 +21,12 @@ let (p16, f16) = WindowRecoveryTests.runAll()
 fputs("running window rescan tests...\n", stderr)
 let (p18, f18) = WindowRescanTests.runAll()
 
+fputs("running window title tests...\n", stderr)
+let (p19, f19) = WindowTitleTests.runAll()
+
+fputs("running window mode tests...\n", stderr)
+let (p20, f20) = WindowModeTests.runAll()
+
 fputs("running config tests...\n", stderr)
 let (p4, f4) = ConfigTests.runAll()
 
@@ -54,8 +60,8 @@ let (p12, f12) = MonocleBarTests.runAll()
 fputs("running performance tests...\n", stderr)
 let (p2, f2) = TilerPerformanceTests.runAll()
 
-let passed = p1 + p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9 + p10 + p11 + p12 + p13 + p14 + p15 + p16 + p17 + p18
-let failed = f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8 + f9 + f10 + f11 + f12 + f13 + f14 + f15 + f16 + f17 + f18
+let passed = p1 + p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9 + p10 + p11 + p12 + p13 + p14 + p15 + p16 + p17 + p18 + p19 + p20
+let failed = f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8 + f9 + f10 + f11 + f12 + f13 + f14 + f15 + f16 + f17 + f18 + f19 + f20
 
 fputs("\n\(passed) passed, \(failed) failed\n", stderr)
 

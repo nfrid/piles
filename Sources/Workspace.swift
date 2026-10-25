@@ -52,7 +52,7 @@ package final class WorkspaceManager {
             monitor.paused = paused
             if paused { monitor.cancelPendingWork() }
         }
-        if paused { commitChanges() }
+        if paused || monitors.isEmpty { commitChanges() }
         else { _ = rescan() }
     }
 

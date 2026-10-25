@@ -75,6 +75,18 @@ enum HotkeyTests {
             "default close active window resolves"
         )
 
+        config = Config()
+        check(resolver.resolve(keyCode: Key.p, flags: [.maskAlternate], config: config) == .togglePause,
+              "option-p toggles pause")
+        check(resolver.resolve(keyCode: Key.f, flags: [.maskAlternate], config: config) == .toggleFloating,
+              "option-f toggles focused floating state")
+        config.bindings.togglePause = (Key.p, true)
+        check(resolver.resolve(keyCode: Key.p, flags: [.maskAlternate, .maskShift], config: config) == .togglePause,
+              "pause binding can be remapped")
+        config.customBindings = [Binding(key: Key.f, command: "true")]
+        check(resolver.resolve(keyCode: Key.f, flags: [.maskAlternate], config: config) == .runCommand("true"),
+              "custom bindings retain precedence over floating")
+
         Hotkeys.shared.stop()
         Hotkeys.shared.stop()
         check(true, "hotkeys stop is idempotent")
