@@ -20,6 +20,7 @@ package final class IPCServer {
     private var acceptSource: DispatchSourceRead?
     private var activeClientFDs: Set<Int32> = []
     private var boundSocketPath: String?
+    private var boundSocketIdentity: (dev_t, ino_t)?
     private var generation = 0
 
     private init() {
@@ -35,27 +36,32 @@ package final class IPCServer {
         }
     }
 
-    package func stop() {
+    package func reconfigure() {
         onQueue { [self] in
+            stopOnQueue()
+            guard Config.shared.ipcEnabled, bindAndListen() else { return }
             generation += 1
-            acceptSource?.cancel()
-            acceptSource = nil
+            installAcceptSource()
+        }
+    }
 
-            // The source is canceled on its own serial queue before its fd is
-            // closed, so no new accept callback can race with this close.
-            if listenFD >= 0 {
-                close(listenFD)
-                listenFD = -1
-            }
-            // Workers own and close accepted descriptors. Shutdown interrupts
-            // their blocking reads without risking a double-close after fd reuse.
-            for fd in activeClientFDs {
-                shutdown(fd, SHUT_RDWR)
-            }
-            if let path = boundSocketPath {
-                unlink(path)
-                boundSocketPath = nil
-            }
+    package func stop() {
+        onQueue { [self] in stopOnQueue() }
+    }
+
+    private func stopOnQueue() {
+        generation += 1
+        acceptSource?.cancel()
+        acceptSource = nil
+        if listenFD >= 0 {
+            close(listenFD)
+            listenFD = -1
+        }
+        for fd in activeClientFDs { shutdown(fd, SHUT_RDWR) }
+        if let path = boundSocketPath {
+            removeBoundSocket(path)
+            boundSocketPath = nil
+            boundSocketIdentity = nil
         }
     }
 
@@ -72,7 +78,7 @@ package final class IPCServer {
         let parent = (path as NSString).deletingLastPathComponent
         try? FileManager.default.createDirectory(atPath: parent, withIntermediateDirectories: true)
 
-        unlink(path)
+        guard prepareSocketPath(path) else { return false }
 
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else {
@@ -106,23 +112,90 @@ package final class IPCServer {
             return false
         }
 
+        boundSocketIdentity = socketIdentity(path)
+
         guard setNonBlocking(fd: fd) else {
             close(fd)
-            unlink(path)
+            removeBoundSocket(path)
             return false
         }
 
         guard listen(fd, 8) == 0 else {
             logErrno("listen")
             close(fd)
-            unlink(path)
+            removeBoundSocket(path)
             return false
         }
 
         listenFD = fd
         boundSocketPath = path
+        boundSocketIdentity = socketIdentity(path)
         fputs("piles: ipc listening on \(path)\n", stderr)
         return true
+    }
+
+    private func socketIdentity(_ path: String) -> (dev_t, ino_t)? {
+        var info = stat()
+        guard lstat(path, &info) == 0, (info.st_mode & S_IFMT) == S_IFSOCK else { return nil }
+        return (info.st_dev, info.st_ino)
+    }
+
+    private func prepareSocketPath(_ path: String) -> Bool {
+        var info = stat()
+        if lstat(path, &info) != 0 { return errno == ENOENT }
+        guard (info.st_mode & S_IFMT) == S_IFSOCK else {
+            fputs("piles: refusing to replace non-socket IPC path \(path)\n", stderr)
+            return false
+        }
+        let identity = (info.st_dev, info.st_ino)
+        let probe = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard probe >= 0 else { logErrno("socket probe"); return false }
+        defer { close(probe) }
+        let flags: Int32
+        while true {
+            let result = fcntl(probe, F_GETFL)
+            if result >= 0 { flags = result; break }
+            if errno != EINTR { return false }
+        }
+        while fcntl(probe, F_SETFL, flags | O_NONBLOCK) < 0 {
+            if errno != EINTR { return false }
+        }
+        let probeResult = connectToPath(probe, path)
+        if probeResult == 0 || errno == EINPROGRESS || errno == EALREADY || errno == EAGAIN || errno == EWOULDBLOCK {
+            fputs("piles: IPC socket already has a listener at \(path)\n", stderr)
+            return false
+        }
+        while probeResult < 0 && errno == EINTR {
+            if connectToPath(probe, path) == 0 || errno == EINPROGRESS || errno == EALREADY || errno == EAGAIN || errno == EWOULDBLOCK {
+                return false
+            }
+        }
+        guard errno == ECONNREFUSED else { return false }
+        var current = stat()
+        guard lstat(path, &current) == 0, current.st_dev == identity.0,
+              current.st_ino == identity.1, (current.st_mode & S_IFMT) == S_IFSOCK else { return false }
+        return unlink(path) == 0
+    }
+
+    private func removeBoundSocket(_ path: String) {
+        guard let identity = boundSocketIdentity, let current = socketIdentity(path),
+              current.0 == identity.0, current.1 == identity.1 else { return }
+        unlink(path)
+    }
+
+    private func connectToPath(_ fd: Int32, _ path: String) -> Int32 {
+        var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
+        let bytes = path.utf8CString
+        guard bytes.count <= MemoryLayout.size(ofValue: addr.sun_path) else { errno = ENAMETOOLONG; return -1 }
+        _ = withUnsafeMutablePointer(to: &addr.sun_path) { ptr in
+            bytes.withUnsafeBytes { memcpy(ptr, $0.baseAddress!, $0.count) }
+        }
+        return withUnsafePointer(to: &addr) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
     }
 
     private func setNonBlocking(fd: Int32) -> Bool {

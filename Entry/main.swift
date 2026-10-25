@@ -47,6 +47,14 @@ func setupCrashSafety() {
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
 
+switch PilesInstanceLock.acquire() {
+case .success:
+    break
+case .failure(let message):
+    fputs("piles: \(message.message)\n", stderr)
+    exit(1)
+}
+
 guard checkAccessibility() else {
     let alert = NSAlert()
     alert.messageText = "piles requires Accessibility permission"
