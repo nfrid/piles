@@ -64,6 +64,37 @@ enum WindowObserverTests {
         check(groupedSync?.first?.containsElement(groupedFirst) == false,
               "destroyed grouped member is absent from reconciled entry")
 
+        var groupedState = MonitorState(count: 2)
+        groupedState.insertWindow(groupedWindow, floating: true)
+        let savedFrame = CGRect(x: 80, y: 90, width: 500, height: 400)
+        groupedState.saveParkedFrame(savedFrame, for: groupedWindow)
+        if let remaining = groupedSync?.first {
+            groupedState.replaceWindow(groupedWindow, with: remaining)
+            check(groupedState.isFloating(remaining) && groupedState.parkedFrame(for: remaining) == savedFrame,
+                  "closing a grouped member preserves floating mode and restore geometry")
+            check(groupedState.windowMetadata[WindowIdentityKey(element: groupedFirst)] == nil,
+                  "closing a grouped member removes its dead metadata identity")
+        } else {
+            check(false, "grouped destroy provides a surviving entry for metadata transfer")
+        }
+
+        var activeWindows = [destroyedWindow]
+        let focusedWasOccupied = !activeWindows.isEmpty
+        var fallbackAfterSnapshot: Int?
+        WindowSnapshotReconciliation.applyDestroyed(
+            destroyedElement,
+            snapshot: [survivingWindow],
+            remove: { _ in
+                fallbackAfterSnapshot = WorkspaceManager.closeFallbackTarget(
+                    isFocusedMonitor: true, wasActiveOccupied: focusedWasOccupied,
+                    activeIsEmpty: activeWindows.isEmpty, nextOccupied: 1
+                )
+            },
+            sync: { _ in activeWindows.removeAll() }
+        )
+        check(fallbackAfterSnapshot == 1,
+              "fallback retains pre-snapshot occupancy when sync already removed the invalid closing window")
+
         var ordinarySyncCount = 0
         check(!WindowSnapshotReconciliation.applyOrdinary(nil) { _ in ordinarySyncCount += 1 },
               "nil ordinary snapshot is not authoritative")

@@ -199,11 +199,14 @@ package final class WindowObserver {
         } else if notif == kAXUIElementDestroyedNotification {
             MainThread.run {
                 WindowObserver.shared.stopObservingWindow(element: element, pid: pidValue)
+                let workspace = WorkspaceManager.shared
+                let focusedWasOccupied = !workspace.monitors.isEmpty
+                    && !workspace.focusedMonitor.workspaces[workspace.focusedMonitor.active].isEmpty
                 let windows = WindowManager.windows(pid: pidValue)
                 WindowSnapshotReconciliation.applyDestroyed(
                     element,
                     snapshot: windows,
-                    remove: { WorkspaceManager.shared.removeWindow(element: $0) },
+                    remove: { workspace.removeWindow(element: $0, focusedWasOccupied: focusedWasOccupied) },
                     sync: { current in
                         DebugLog.write("destroy sync pid=\(pidValue) windows=\(DebugLog.describe(current))")
                         WorkspaceManager.shared.syncWindows(pid: pidValue, windows: current)

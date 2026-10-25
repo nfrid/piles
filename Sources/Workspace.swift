@@ -237,13 +237,12 @@ package final class WorkspaceManager {
         removeWindows { $0.hasElement(window) }
     }
 
-    func removeWindow(element: AXUIElement) {
+    func removeWindow(element: AXUIElement, focusedWasOccupied: Bool) {
         var changed = false
         var monitorsToRetile: [Monitor] = []
         var focusedMonitorFallback: (Monitor, Int)?
         for monitor in monitors {
             let isFocusedMonitor = monitor === focusedMonitor
-            let wasActiveOccupied = !monitor.workspaces[monitor.active].isEmpty
             var replacements: [(TrackedWindow, TrackedWindow, Int)] = []
             for workspaceIndex in monitor.workspaces.indices {
                 for window in monitor.workspaces[workspaceIndex] where window.containsElement(element) {
@@ -266,14 +265,14 @@ package final class WorkspaceManager {
 
             if let target = WorkspaceManager.closeFallbackTarget(
                 isFocusedMonitor: isFocusedMonitor,
-                wasActiveOccupied: wasActiveOccupied,
+                wasActiveOccupied: focusedWasOccupied,
                 activeIsEmpty: monitor.workspaces[monitor.active].isEmpty,
                 nextOccupied: monitor.nextOccupiedWorkspace(offset: 1)
             ) {
                 focusedMonitorFallback = (monitor, target)
             }
         }
-        guard changed else { return }
+        guard changed || focusedMonitorFallback != nil else { return }
         for monitor in monitorsToRetile where monitor !== focusedMonitorFallback?.0 {
             monitor.retile()
         }
