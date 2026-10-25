@@ -182,16 +182,19 @@ enum WindowObserverTests {
         let transitionScreens = NSScreen.screens
         if let screen = transitionScreens.first {
             let monitor = Monitor(displayID: 0, screen: screen)
+            monitor.paused = true
             monitor.state = transitionMonitor
             var transitionAttempt = 0
             let attributes: [WindowAttributes?] = [standardAttributes, nil, dialogAttributes]
             let transition = WindowSyncScheduler(retryDelay: 0, maxRetries: 4) { _ in
-                let current = attributes[min(transitionAttempt, attributes.count - 1)]
-                transitionAttempt += 1
-                _ = monitor.removeStaleWindows(
-                    pid: 105, current: [], attributesFor: { _ in current }, isConfirmedInvalid: { _ in false }
-                )
-                return !monitor.containsWindow(dialogWindow)
+                WindowSnapshotReconciliation.applyHidden(isHidden: true) {
+                    let current = attributes[min(transitionAttempt, attributes.count - 1)]
+                    transitionAttempt += 1
+                    _ = monitor.removeStaleWindows(
+                        pid: 105, current: [], attributesFor: { _ in current }, isConfirmedInvalid: { _ in false }
+                    )
+                    return !monitor.containsWindow(dialogWindow)
+                }
             }
             transition.sync(pid: 105)
             waitUntil { transitionAttempt == 3 }
@@ -201,27 +204,43 @@ enum WindowObserverTests {
             monitor.state.insertWindow(dialogWindow)
             var exhaustedAttempt = 0
             let exhausted = WindowSyncScheduler(retryDelay: 0, maxRetries: 2) { _ in
-                let current: WindowAttributes? = exhaustedAttempt == 0 ? standardAttributes : nil
-                exhaustedAttempt += 1
-                _ = monitor.removeStaleWindows(
-                    pid: 105, current: [], attributesFor: { _ in current }, isConfirmedInvalid: { _ in false }
-                )
-                return !monitor.containsWindow(dialogWindow)
+                WindowSnapshotReconciliation.applyHidden(isHidden: true) {
+                    let current: WindowAttributes? = exhaustedAttempt == 0 ? standardAttributes : nil
+                    exhaustedAttempt += 1
+                    _ = monitor.removeStaleWindows(
+                        pid: 105, current: [], attributesFor: { _ in current }, isConfirmedInvalid: { _ in false }
+                    )
+                    return !monitor.containsWindow(dialogWindow)
+                }
             }
             exhausted.sync(pid: 105)
             waitUntil { exhaustedAttempt == 3 }
             check(exhaustedAttempt == 3 && monitor.containsWindow(dialogWindow),
                   "retry exhaustion retains a live standard window after unknown attributes")
         } else {
-            check(false, "hide retry tests require a screen")
+            fputs("skip WindowObserverTests hide geometry cases: no screens available\n", stderr)
         }
+
+        if WorkspaceManager.shared.monitors.isEmpty {
+            WorkspaceManager.shared.syncWindows(pid: 900_105, windows: [], hiddenCleanup: true)
+            check(!WorkspaceManager.shared.hasStoredWindows(pid: 900_105), "hide cleanup is safe without monitors")
+        } else {
+            check(false, "hide cleanup fixture must not bootstrap real monitors")
+        }
+        var cleanupCalls = 0
+        check(WindowSnapshotReconciliation.applyHidden(isHidden: false) { cleanupCalls += 1; return false }
+              && cleanupCalls == 0, "unhidden app skips production hide cleanup and ends the retry")
+        check(!WindowSnapshotReconciliation.applyHidden(isHidden: true) { cleanupCalls += 1; return false }
+              && cleanupCalls == 1, "hidden app runs production cleanup and retains an incomplete retry")
+        check(WindowSnapshotReconciliation.applyHidden(isHidden: true) { true }, "completed hide cleanup ends the retry")
 
         var hidden = true
         var guardedAttempts = 0
         let guarded = WindowSyncScheduler(retryDelay: 0, maxRetries: 3) { _ in
-            guard hidden else { return true }
-            guardedAttempts += 1
-            return false
+            WindowSnapshotReconciliation.applyHidden(isHidden: hidden) {
+                guardedAttempts += 1
+                return false
+            }
         }
         guarded.sync(pid: 106)
         hidden = false
@@ -231,9 +250,10 @@ enum WindowObserverTests {
 
         var unhiddenAttempts = 0
         let staleHide = WindowSyncScheduler(retryDelay: 0, maxRetries: 3) { _ in
-            guard hidden else { return true }
-            unhiddenAttempts += 1
-            return false
+            WindowSnapshotReconciliation.applyHidden(isHidden: hidden) {
+                unhiddenAttempts += 1
+                return false
+            }
         }
         hidden = true
         staleHide.sync(pid: 107)

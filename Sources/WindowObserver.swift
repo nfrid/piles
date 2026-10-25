@@ -25,10 +25,12 @@ package final class WindowObserver {
     private lazy var syncScheduler = WindowSyncScheduler { [weak self] pid in
         self?.syncWindows(pid: pid) ?? true
     }
-    private lazy var hideCleanupScheduler = WindowSyncScheduler(retryDelay: 0.05, maxRetries: 4) { pid in
-        guard !WindowManager.isAppHidden(pid: pid) else { return true }
-        WorkspaceManager.shared.syncWindows(pid: pid, windows: [], hiddenCleanup: true)
-        return !WorkspaceManager.shared.hasStoredWindows(pid: pid)
+    private lazy var hideCleanupScheduler = WindowSyncScheduler(retryDelay: 0.05, maxRetries: 4) { [weak self] pid in
+        guard let self, !self.stopped else { return true }
+        return WindowSnapshotReconciliation.applyHidden(isHidden: WindowManager.isAppHidden(pid: pid)) {
+            WorkspaceManager.shared.syncWindows(pid: pid, windows: [], hiddenCleanup: true)
+            return !WorkspaceManager.shared.hasStoredWindows(pid: pid)
+        }
     }
 
     private init() {}
@@ -55,7 +57,6 @@ package final class WindowObserver {
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
             let pid = app.processIdentifier
             WorkspaceManager.shared.removeWindow(pid: pid)
-            WindowObserver.shared.hideCleanupScheduler.cancel(pid: pid)
             WindowObserver.shared.stopObservingApp(pid: pid)
         })
 
@@ -313,6 +314,11 @@ package final class WindowObserver {
 }
 
 enum WindowSnapshotReconciliation {
+    static func applyHidden(isHidden: Bool, cleanup: () -> Bool) -> Bool {
+        guard isHidden else { return true }
+        return cleanup()
+    }
+
     static func applyOrdinary(_ snapshot: [TrackedWindow]?, sync: ([TrackedWindow]) -> Void) -> Bool {
         guard let snapshot, !snapshot.isEmpty else { return false }
         sync(snapshot)

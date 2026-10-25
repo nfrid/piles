@@ -208,7 +208,7 @@ package final class WorkspaceManager {
     func syncWindows(pid: pid_t, windows: [TrackedWindow], commit: Bool = true, hiddenCleanup: Bool = false) {
         DebugLog.write("workspace sync begin pid=\(pid) windows=\(DebugLog.describe(windows))")
         let hadTrackedWindows = hasTrackedWindows(pid: pid)
-        let focusedWasOccupied = !focusedMonitor.workspaces[focusedMonitor.active].isEmpty
+        let focusedWasOccupied = !monitors.isEmpty && !focusedMonitor.workspaces[focusedMonitor.active].isEmpty
         var changed = false
         var focusedMonitorFallback: Int?
         for monitor in monitors {

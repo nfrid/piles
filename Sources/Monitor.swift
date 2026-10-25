@@ -218,8 +218,8 @@ package final class Monitor {
     ) -> Bool {
         removeWindows { window in
             guard window.pid == pid, !current.contains(window) else { return false }
-            let attributes = attributesFor(window)
-            guard isConfirmedInvalid(window) || attributes.map({ $0.trackabilityKnown && !$0.isTrackable }) == true else {
+            guard isConfirmedInvalid(window)
+                || attributesFor(window).map({ $0.trackabilityKnown && !$0.isTrackable }) == true else {
                 return false
             }
             DebugLog.write("monitor \(displayID) stale pid=\(pid) window=\(DebugLog.describe(window))")

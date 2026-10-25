@@ -27,6 +27,7 @@ enum MonitorTests {
 
         do {
             let monitor = Monitor(displayID: 0, screen: screen)
+            monitor.paused = true
             let kept = testWindow(pid: 5001)
             let removed = testWindow(pid: 5002)
             monitor.state.workspaces[0] = [kept, removed]
@@ -72,6 +73,19 @@ enum MonitorTests {
             check(
                 !monitor.removeStaleWindows(pid: 5004, current: [], attributesFor: { _ in partialAttributes }) { _ in false },
                 "stale cleanup preserves partially known role attributes"
+            )
+            monitor.state.workspaces[0] = [standard]
+            check(
+                !monitor.removeStaleWindows(pid: 5005, current: [], attributesFor: { _ in standardAttributes }) { _ in false },
+                "stale cleanup retains an absent but still-valid standard window of the same PID"
+            )
+            let unknownMinimized = WindowAttributes(
+                role: kAXWindowRole, subrole: kAXStandardWindowSubrole,
+                minimized: false, fullscreen: false, minimizedKnown: false
+            )
+            check(
+                !monitor.removeStaleWindows(pid: 5005, current: [], attributesFor: { _ in unknownMinimized }) { _ in false },
+                "stale cleanup retains standard windows when minimized state is unknown"
             )
         }
 
