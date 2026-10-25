@@ -195,6 +195,10 @@ package struct Config {
         NSString(string: ipcSocketPath).expandingTildeInPath
     }
 
+    package static var defaultPath: String {
+        NSString("~/.config/piles/config.toml").expandingTildeInPath
+    }
+
     package fileprivate(set) var numberKeys: [UInt16: Int] = buildNumberKeys(count: 9)
 
     fileprivate static func buildNumberKeys(count: Int) -> [UInt16: Int] {
@@ -205,7 +209,7 @@ package struct Config {
 
     @discardableResult
     package static func load(
-        path: String = NSString("~/.config/piles/config.toml").expandingTildeInPath
+        path: String = defaultPath
     ) -> Bool {
         do {
             return load(text: try String(contentsOfFile: path, encoding: .utf8))
@@ -248,6 +252,12 @@ package struct Config {
 package enum ConfigParser {
     package typealias DiagnosticSink = (String) -> Void
 
+    package static func validate(text: String) -> [String] {
+        var diagnostics: [String] = []
+        _ = parse(text: text) { diagnostics.append($0) }
+        return diagnostics
+    }
+
     package static func parse(text: String, diagnose: DiagnosticSink = { _ in }) -> Config? {
         let toml: [String: Any]
         do {
@@ -261,6 +271,25 @@ package enum ConfigParser {
     }
 
     static func parse(toml: [String: Any], diagnose: DiagnosticSink = { _ in }) -> Config {
+        diagnoseFields(toml, context: "root", types: [
+            "workspace_count": Int.self, "master_ratio": Double.self, "default_layout": String.self,
+            "modifier": String.self, "accent_color": String.self, "ipc_enabled": Bool.self,
+            "ipc_socket": String.self, "bindings": [String: Any].self,
+            "custom": [[String: Any]].self, "assign": [[String: Any]].self,
+            "workspace": [[String: Any]].self,
+        ], diagnose: diagnose)
+        if let bindings = toml["bindings"] as? [String: Any] {
+            let types = Dictionary(uniqueKeysWithValues: builtinBindingKeys.map { ($0.name, String.self as Any.Type) })
+            diagnoseFields(bindings, context: "bindings", types: types, diagnose: diagnose)
+        }
+        diagnoseArrayEntries(toml["custom"], context: "custom",
+                             types: ["key": String.self, "command": String.self], diagnose: diagnose)
+        diagnoseArrayEntries(toml["assign"], context: "assign",
+                             types: ["app": String.self, "bundle_id": String.self, "title": String.self,
+                                     "title_contains": String.self, "monitor": Int.self, "workspace": Int.self,
+                                     "position": Int.self], diagnose: diagnose)
+        diagnoseArrayEntries(toml["workspace"], context: "workspace",
+                             types: ["index": Int.self, "name": String.self, "color": String.self], diagnose: diagnose)
         var config = Config()
 
         applyWorkspaceCount(toml["workspace_count"], to: &config, diagnose: diagnose)
@@ -297,6 +326,55 @@ package enum ConfigParser {
         }
 
         return config
+    }
+
+    private static func diagnoseFields(
+        _ values: [String: Any],
+        context: String,
+        types: [String: Any.Type],
+        diagnose: DiagnosticSink
+    ) {
+        for key in values.keys.sorted() where types[key] == nil {
+            diagnose("unknown key '\(key)' in \(context)")
+        }
+        for key in types.keys.sorted() {
+            guard let value = values[key], let expected = types[key] else { continue }
+            guard !matches(value, expected: expected) else { continue }
+            let field = context == "root" ? key : "\(context) key '\(key)'"
+            diagnose("\(field) must be a \(typeName(expected))")
+        }
+    }
+
+    private static func matches(_ value: Any, expected: Any.Type) -> Bool {
+        if expected == String.self { return value is String }
+        if expected == Int.self { return value is Int }
+        if expected == Double.self { return value is Double || value is Int }
+        if expected == Bool.self { return value is Bool }
+        if expected == [String: Any].self { return value is [String: Any] }
+        if expected == [[String: Any]].self { return value is [[String: Any]] }
+        return false
+    }
+
+    private static func typeName(_ type: Any.Type) -> String {
+        switch type {
+        case is String.Type: return "string"
+        case is Int.Type: return "integer"
+        case is Double.Type: return "number"
+        case is Bool.Type: return "boolean"
+        default: return "table"
+        }
+    }
+
+    private static func diagnoseArrayEntries(
+        _ value: Any?,
+        context: String,
+        types: [String: Any.Type],
+        diagnose: DiagnosticSink
+    ) {
+        guard let entries = value as? [[String: Any]] else { return }
+        for (index, entry) in entries.enumerated() {
+            diagnoseFields(entry, context: "\(context) entry \(index + 1)", types: types, diagnose: diagnose)
+        }
     }
 
     private static func emptyWorkspaceAppearances(count: Int) -> [WorkspaceAppearance] {
@@ -420,7 +498,12 @@ package enum ConfigParser {
         entries.compactMap { entry in
             guard let keyStr = entry["key"] as? String,
                   let command = entry["command"] as? String
-            else { return nil }
+            else {
+                if entry["key"] == nil || entry["command"] == nil {
+                    diagnose("custom binding needs key and command")
+                }
+                return nil
+            }
 
             let (keyCode, shift) = parseKeyString(keyStr)
             guard let code = keyCode else {

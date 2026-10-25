@@ -17,6 +17,69 @@ enum ConfigTests {
         }
 
         do {
+            let valid = ConfigParser.validate(text: """
+            workspace_count = 3
+            master_ratio = 0.6
+            default_layout = "tile"
+            modifier = "control"
+            ipc_enabled = true
+            ipc_socket = "~/tmp/piles.sock"
+            accent_color = "teal"
+            [bindings]
+            focus_next = "shift+l"
+            [[custom]]
+            key = "shift+t"
+            command = "true"
+            [[assign]]
+            app = "Terminal"
+            workspace = 2
+            [[workspace]]
+            index = 1
+            name = "Code"
+            color = "orange"
+            """)
+            check(valid.isEmpty, "validates supported configuration")
+            let previous = Config.shared
+            let invalid = ConfigParser.validate(text: "workspace_count = 0")
+            check(invalid.contains("workspace_count must be between 1 and 9, using 9"), "validation reports fallback diagnostics")
+            check(Config.shared.workspaceCount == previous.workspaceCount, "validation does not mutate shared configuration")
+            check(ConfigParser.validate(text: "workspace_count =").first?.hasPrefix("config parse error:") == true,
+                  "validation reports malformed syntax")
+            check(ConfigParser.validate(text: "bindings = 1").contains("bindings must be a table"),
+                  "validation reports wrong root table shape")
+            check(ConfigParser.validate(text: "[[custom]]").contains("custom binding needs key and command"),
+                  "validation reports missing required custom fields")
+
+            let unknown = ConfigParser.validate(text: """
+            extra = 1
+            workspace_count = "3"
+            [bindings]
+            bogus = "j"
+            move_next = 3
+            [[custom]]
+            key = 2
+            command = "true"
+            extra = false
+            [[assign]]
+            app = 4
+            mystery = "x"
+            [[workspace]]
+            index = "1"
+            color = false
+            extra = 1
+            """)
+            check(unknown.contains("unknown key 'extra' in root"), "validation reports unknown root keys")
+            check(unknown.contains("unknown key 'bogus' in bindings"), "validation reports unknown binding keys")
+            check(unknown.contains(where: { $0.contains("workspace_count") && $0.contains("integer") }), "validation reports wrong root types")
+            check(unknown.contains(where: { $0.contains("move_next") && $0.contains("string") }), "validation reports wrong binding types")
+            check(unknown.contains(where: { $0.contains("unknown key 'extra' in custom entry") }), "validation reports unknown custom keys")
+            check(unknown.contains(where: { $0.contains("unknown key 'mystery' in assign entry") }), "validation reports unknown assignment keys")
+            check(unknown.contains(where: { $0.contains("unknown key 'extra' in workspace entry") }), "validation reports unknown workspace keys")
+            check(unknown.contains(where: { $0.contains("custom entry") && $0.contains("key") }), "validation reports wrong custom field types")
+            check(unknown.contains(where: { $0.contains("assign entry") && $0.contains("app") }), "validation reports wrong assignment field types")
+            check(unknown.contains(where: { $0.contains("workspace entry") && $0.contains("index") }), "validation reports wrong workspace field types")
+            check(unknown.contains(where: { $0.contains("workspace entry") && $0.contains("color") }), "validation reports wrong workspace color type")
+
             Config.load(text: """
             accent_color = "teal"
 
