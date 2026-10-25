@@ -29,6 +29,7 @@ debug:
 test:
 	swift build --product piles-tests
 	.build/debug/piles-tests
+	bash Tests/benchmark-tests.sh
 
 check: test build
 
@@ -36,6 +37,7 @@ check: test build
 agent-test:
 	swift build --disable-sandbox --product piles-tests
 	.build/debug/piles-tests
+	bash Tests/benchmark-tests.sh
 
 agent-build:
 	swift build --disable-sandbox --product piles -c release

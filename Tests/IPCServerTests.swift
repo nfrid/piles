@@ -32,7 +32,7 @@ enum IPCServerTests {
         let ordinary = path + ".file"
         try? Data("keep".utf8).write(to: URL(fileURLWithPath: ordinary))
         Config.shared.ipcSocketPath = ordinary
-        IPCServer.shared.start()
+        check(!IPCServer.shared.reconfigure(), "reconfigure reports a path conflict")
         check((try? String(contentsOfFile: ordinary, encoding: .utf8)) == "keep", "preserves ordinary files at configured socket paths")
         IPCServer.shared.stop()
         unlink(ordinary)
@@ -144,14 +144,24 @@ enum IPCServerTests {
         let secondPath = path + ".reconfigure-b"
         Config.shared.ipcEnabled = true
         Config.shared.ipcSocketPath = firstPath
-        IPCServer.shared.reconfigure()
-        check(waitForSocket(firstPath), "reconfigure starts IPC at configured path")
+        check(IPCServer.shared.reconfigure() && waitForSocket(firstPath), "reconfigure starts IPC at configured path")
+        if let connected = connect(to: firstPath) {
+            check(IPCServer.shared.reconfigure(), "unchanged IPC configuration remains available")
+            let sent = "ping\n".withCString { Darwin.send(connected, $0, 5, 0) }
+            var response = [UInt8](repeating: 0, count: 16)
+            let received = recv(connected, &response, 5, MSG_WAITALL)
+            check(sent == 5 && received == 5 && String(bytes: response.prefix(5), encoding: .utf8) == "pong\n",
+                  "unchanged reload preserves connected clients")
+            close(connected)
+        } else {
+            check(false, "connects a client before unchanged reload")
+        }
         Config.shared.ipcSocketPath = secondPath
-        IPCServer.shared.reconfigure()
-        check(waitForSocket(secondPath) && !FileManager.default.fileExists(atPath: firstPath), "reconfigure moves listener to changed path")
+        check(IPCServer.shared.reconfigure() && send("ping\n", to: secondPath) == "pong\n"
+              && !FileManager.default.fileExists(atPath: firstPath), "reconfigure moves listener to changed path")
         Config.shared.ipcEnabled = false
-        IPCServer.shared.reconfigure()
-        check(!FileManager.default.fileExists(atPath: secondPath), "reconfigure stops IPC when disabled")
+        check(IPCServer.shared.reconfigure() && !FileManager.default.fileExists(atPath: secondPath),
+              "reconfigure stops IPC when disabled")
         Config.shared.ipcEnabled = true
         Config.shared.ipcSocketPath = path
         IPCServer.shared.start()
@@ -168,7 +178,7 @@ enum IPCServerTests {
         let lockPath = path + ".lock"
         switch PilesInstanceLock.acquire(lockFilePath: lockPath) {
         case .success:
-            let heldFD = PilesInstanceLock.descriptorForTesting
+            let heldFD = PilesInstanceLock.descriptor
             let descriptorFlags = fcntl(heldFD, F_GETFD)
             let other = open(lockPath, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
             var lockFailed = other >= 0 && flock(other, LOCK_EX | LOCK_NB) != 0 && (errno == EWOULDBLOCK || errno == EAGAIN)
@@ -235,7 +245,13 @@ enum IPCServerTests {
                 if poll(&descriptor, 1, 1_000) > 0 {
                     let client = accept(listener, nil, nil)
                     if client >= 0 {
-                        behavior(client)
+                        var noSigPipe: Int32 = 1
+                        var timeout = timeval(tv_sec: 1, tv_usec: 0)
+                        let protected = setsockopt(client, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe,
+                                                   socklen_t(MemoryLayout<Int32>.size)) == 0
+                        let bounded = setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &timeout,
+                                                 socklen_t(MemoryLayout<timeval>.size)) == 0
+                        if protected && bounded { behavior(client) }
                         close(client)
                     }
                 }
@@ -313,6 +329,12 @@ enum IPCServerTests {
             return nil
         }
 
+        var noSigPipe: Int32 = 1
+        guard setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe,
+                         socklen_t(MemoryLayout<Int32>.size)) == 0 else {
+            close(fd)
+            return nil
+        }
         var timeout = timeval(tv_sec: 2, tv_usec: 0)
         _ = setsockopt(
             fd,
@@ -325,29 +347,6 @@ enum IPCServerTests {
     }
 
     private static func send(_ command: String, to path: String) -> String? {
-        guard let fd = connect(to: path) else { return nil }
-        defer { close(fd) }
-
-        let data = Data(command.utf8)
-        let sent = data.withUnsafeBytes { raw -> Bool in
-            guard let base = raw.baseAddress else { return false }
-            var offset = 0
-            while offset < raw.count {
-                let count = Darwin.send(fd, base.advanced(by: offset), raw.count - offset, 0)
-                if count <= 0 { return false }
-                offset += count
-            }
-            return true
-        }
-        guard sent else { return nil }
-
-        var response = [UInt8]()
-        var chunk = [UInt8](repeating: 0, count: 256)
-        while !response.contains(10) {
-            let count = recv(fd, &chunk, chunk.count, 0)
-            if count <= 0 { return nil }
-            response.append(contentsOf: chunk[0..<count])
-        }
-        return String(bytes: response, encoding: .utf8)
+        try? IPCClient.request(command, socketPath: path).get()
     }
 }

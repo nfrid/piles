@@ -64,7 +64,8 @@ package final class WorkspaceGlance: OverlaySessionHost {
         session.hide()
     }
 
-    package func refreshIfVisible() {
+    package func refreshIfVisible(windowTitlesChanged: Bool = false) {
+        if windowTitlesChanged { lastRefreshFingerprint = nil }
         session.refreshIfVisible()
     }
 

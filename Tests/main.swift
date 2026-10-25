@@ -21,6 +21,12 @@ let (p4, f4) = ConfigTests.runAll()
 fputs("running hotkey tests...\n", stderr)
 let (p5, f5) = HotkeyTests.runAll()
 
+fputs("running input scheduling tests...\n", stderr)
+let (p14, f14) = InputSchedulingTests.runAll()
+
+fputs("running window observer tests...\n", stderr)
+let (p15, f15) = WindowObserverTests.runAll()
+
 fputs("running ipc command tests...\n", stderr)
 let (p6, f6) = IPCCommandTests.runAll()
 
@@ -39,8 +45,8 @@ let (p12, f12) = MonocleBarTests.runAll()
 fputs("running performance tests...\n", stderr)
 let (p2, f2) = TilerPerformanceTests.runAll()
 
-let passed = p1 + p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9 + p10 + p11 + p12 + p13
-let failed = f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8 + f9 + f10 + f11 + f12 + f13
+let passed = p1 + p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9 + p10 + p11 + p12 + p13 + p14 + p15
+let failed = f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8 + f9 + f10 + f11 + f12 + f13 + f14 + f15
 
 fputs("\n\(passed) passed, \(failed) failed\n", stderr)
 

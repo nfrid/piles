@@ -204,21 +204,20 @@ package struct Config {
     }
 
     @discardableResult
-    package static func load() -> Bool {
-        let path = NSString("~/.config/piles/config.toml").expandingTildeInPath
-        guard FileManager.default.fileExists(atPath: path) else {
-            shared = Config()
-            return true
-        }
-
-        guard let data = FileManager.default.contents(atPath: path),
-              let text = String(data: data, encoding: .utf8)
-        else {
-            fputs("piles: failed to read config file\n", stderr)
+    package static func load(
+        path: String = NSString("~/.config/piles/config.toml").expandingTildeInPath
+    ) -> Bool {
+        do {
+            return load(text: try String(contentsOfFile: path, encoding: .utf8))
+        } catch {
+            let error = error as NSError
+            if error.domain == NSCocoaErrorDomain && error.code == NSFileReadNoSuchFileError {
+                shared = Config()
+                return true
+            }
+            fputs("piles: failed to read config file: \(error.localizedDescription)\n", stderr)
             return false
         }
-
-        return load(text: text)
     }
 
     @discardableResult

@@ -33,7 +33,13 @@ package final class StatusBar: NSObject {
     }
 
     @objc private func reloadConfig() {
-        WorkspaceManager.shared.reloadConfig()
+        if WorkspaceManager.shared.reloadConfig() { return }
+        let alert = NSAlert()
+        alert.messageText = "Could not reload piles configuration"
+        alert.informativeText = "The previous configuration was kept. Check ~/.config/piles/config.toml and the application log for details."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
 
     @objc private func quit() {

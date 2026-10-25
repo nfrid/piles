@@ -34,7 +34,8 @@ package final class WorkspaceOverview: OverlaySessionHost {
         session.hide()
     }
 
-    package func refreshIfVisible() {
+    package func refreshIfVisible(windowTitlesChanged: Bool = false) {
+        if windowTitlesChanged { lastRefreshFingerprint = nil }
         session.refreshIfVisible()
     }
 
@@ -83,7 +84,7 @@ package final class WorkspaceOverview: OverlaySessionHost {
               !config.matchesConfiguredModifier(flags)
         else { return false }
 
-        MainThread.run {
+        session.enqueue { _ in
             WorkspaceGlance.shared.show(
                 workspaceIndex: self.selectedWorkspace,
                 windowIndex: self.selectedWindow

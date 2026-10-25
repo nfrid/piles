@@ -6,7 +6,7 @@ package enum PilesInstanceLock {
         package let message: String
     }
 
-    private static var descriptor: Int32 = -1
+    private(set) static var descriptor: Int32 = -1
 
     package static func acquire(lockFilePath: String? = nil) -> Result<Void, LockError> {
         if descriptor >= 0 { return .success(()) }
@@ -63,6 +63,4 @@ package enum PilesInstanceLock {
         close(descriptor)
         descriptor = -1
     }
-
-    package static var descriptorForTesting: Int32 { descriptor }
 }

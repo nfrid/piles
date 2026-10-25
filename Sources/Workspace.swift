@@ -222,10 +222,6 @@ package final class WorkspaceManager {
         commitChanges()
     }
 
-    func canResizeMasterRatio(at point: CGPoint) -> Bool {
-        focusedMonitor.canResizeMasterRatio(at: point)
-    }
-
     func resizeMasterRatio(at point: CGPoint) {
         guard focusedMonitor.resizeMasterRatio(at: point) else { return }
         commitChanges()
@@ -363,8 +359,16 @@ package final class WorkspaceManager {
         commitChanges()
     }
 
-    package func reloadConfig() {
-        Config.load()
+    @discardableResult
+    package func reloadConfig() -> Bool {
+        let previous = Config.shared
+        guard Config.load() else { return false }
+        guard IPCServer.shared.reconfigure() else {
+            Config.shared = previous
+            _ = IPCServer.shared.reconfigure()
+            fputs("piles: config reload failed; previous configuration kept\n", stderr)
+            return false
+        }
         let count = Config.shared.workspaceCount
         for monitor in monitors {
             monitor.resizeWorkspaces(to: count)
@@ -372,6 +376,7 @@ package final class WorkspaceManager {
         }
         commitChanges()
         fputs("piles: config reloaded\n", stderr)
+        return true
     }
 
     package func restoreAllWindows() {
@@ -422,6 +427,7 @@ package final class WorkspaceManager {
     }
 
     private func commitChanges(rebuildIndex: Bool = true, refreshUI: Bool = true) {
+        Hotkeys.shared.updateResizeRegion()
         if rebuildIndex {
             rebuildLocationIndex()
         }

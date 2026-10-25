@@ -425,7 +425,7 @@ package final class Monitor {
     }
 
     private func activeWorkspaceMatchesLayout(tolerance: CGFloat) -> Bool {
-        guard let layout = activeLayoutFrames(applyCleanup: false) else { return true }
+        guard let layout = activeLayoutFrames(applyCleanup: false) else { return false }
         guard layout.frames.count == layout.windows.count else { return false }
 
         for i in layout.windows.indices {

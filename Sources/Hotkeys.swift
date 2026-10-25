@@ -86,6 +86,7 @@ package final class Hotkeys {
     private var runLoopSource: CFRunLoopSource?
     private let masterRatioDrag = MasterRatioDragHandler()
     private let resolver = HotkeyResolver()
+    private var actionGeneration = 0
 
     private init() {}
 
@@ -94,6 +95,8 @@ package final class Hotkeys {
     }
 
     package func start() {
+        guard tap == nil else { return }
+        actionGeneration += 1
         let mask: CGEventMask =
             (1 << CGEventType.keyDown.rawValue) |
             (1 << CGEventType.flagsChanged.rawValue) |
@@ -121,7 +124,8 @@ package final class Hotkeys {
     }
 
     package func stop() {
-        masterRatioDrag.reset()
+        actionGeneration += 1
+        masterRatioDrag.updateResizeRegion(nil)
         if let tap {
             CGEvent.tapEnable(tap: tap, enable: false)
         }
@@ -132,6 +136,31 @@ package final class Hotkeys {
         if let tap {
             CFMachPortInvalidate(tap)
             self.tap = nil
+        }
+    }
+
+    // Cache the hit test outside the event tap. It must not query Accessibility.
+    func updateResizeRegion() {
+        let workspace = WorkspaceManager.shared
+        guard !workspace.monitors.isEmpty else {
+            masterRatioDrag.updateResizeRegion(nil)
+            return
+        }
+        let monitor = workspace.focusedMonitor
+        let screen = WindowManager.screenFrame(for: monitor.screen)
+        let dividerX = screen.minX + floor(screen.width * Config.shared.masterRatio)
+        let canResize = monitor.canResizeMasterRatio(at: CGPoint(x: dividerX, y: screen.midY))
+        let region = canResize
+            ? CGRect(x: dividerX - 8, y: screen.minY, width: 16, height: screen.height)
+            : nil
+        masterRatioDrag.updateResizeRegion(region)
+    }
+
+    private func enqueue(_ work: @escaping () -> Void) {
+        let generation = actionGeneration
+        DispatchQueue.main.async { [self] in
+            guard actionGeneration == generation else { return }
+            work()
         }
     }
 
@@ -146,7 +175,7 @@ package final class Hotkeys {
         let flags = event.flags
         if type == .flagsChanged {
             let optionHeld = flags.contains(.maskAlternate)
-            MainThread.run {
+            Hotkeys.shared.enqueue {
                 MonocleBar.shared.setOptionHeld(optionHeld)
             }
             return passThrough(event)
@@ -194,7 +223,7 @@ package final class Hotkeys {
         case .passThrough:
             return Self.passThrough(event)
         default:
-            MainThread.run {
+            enqueue {
                 ActionDispatcher.perform(action)
             }
             return nil

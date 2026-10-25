@@ -27,7 +27,8 @@ let package = Package(
         .executableTarget(
             name: "piles-tests",
             dependencies: ["PilesCore"],
-            path: "Tests"
+            path: "Tests",
+            exclude: ["benchmark-tests.sh"]
         ),
     ]
 )

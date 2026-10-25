@@ -63,24 +63,74 @@ sample() {
     echo "$ts,$WM_NAME,$phase,$rss,$cpu,$threads,$csw,$win_count" >> "$OUTPUT"
 }
 
+open_terminal_window() {
+    local id
+    id=$(osascript - "$WINDOW_MARKER" <<'APPLESCRIPT'
+on run argv
+    tell application "Terminal"
+        set newTab to do script ""
+        set custom title of newTab to item 1 of argv
+        repeat with candidate in windows
+            if newTab is in tabs of candidate then return id of candidate
+        end repeat
+    end tell
+    error "could not identify benchmark window"
+end run
+APPLESCRIPT
+    ) || return 1
+    [[ "$id" =~ ^[0-9]+$ ]] || return 1
+    printf '%s\n' "$id" >> "$TRACKED_WINDOWS"
+    printf '%s\n' "$id"
+}
+
 open_windows() {
     local n="$1"
     for _ in $(seq 1 "$n"); do
-        osascript -e 'tell application "Terminal" to do script ""' >/dev/null 2>&1
+        open_terminal_window >/dev/null
         sleep 0.5
     done
 }
 
-close_all_terminal() {
-    osascript -e 'tell application "Terminal" to close every window' 2>/dev/null || true
-    sleep 1
+close_terminal_window() {
+    osascript - "$1" "$WINDOW_MARKER" <<'APPLESCRIPT' >/dev/null 2>&1 || true
+on run argv
+    set windowID to item 1 of argv as integer
+    set marker to item 2 of argv
+    tell application "Terminal"
+        if not (exists window id windowID) then return
+        set targetWindow to window id windowID
+        repeat with candidateTab in tabs of targetWindow
+            if custom title of candidateTab is not marker then return
+        end repeat
+        close targetWindow
+    end tell
+end run
+APPLESCRIPT
+}
+
+cleanup_benchmark() {
+    if [[ -n "${WORKLOAD_PID:-}" ]]; then
+        kill "$WORKLOAD_PID" 2>/dev/null || true
+        wait "$WORKLOAD_PID" 2>/dev/null || true
+        WORKLOAD_PID=""
+    fi
+    if [[ -n "${TRACKED_WINDOWS:-}" && -f "$TRACKED_WINDOWS" ]]; then
+        while IFS= read -r id; do
+            close_terminal_window "$id"
+        done < "$TRACKED_WINDOWS"
+        rm -f "$TRACKED_WINDOWS"
+        TRACKED_WINDOWS=""
+    fi
 }
 
 workload_loop() {
+    trap - EXIT
+    trap 'exit 0' INT TERM
     while true; do
-        osascript -e 'tell application "Terminal" to do script ""' >/dev/null 2>&1
+        local id
+        id=$(open_terminal_window) || return 1
         sleep 2
-        osascript -e 'tell application "Terminal" to close front window' 2>/dev/null || true
+        close_terminal_window "$id"
         sleep 1
     done
 }
@@ -183,11 +233,15 @@ run_benchmark() {
 
     write_header
 
-    echo ""
-    echo "closing existing terminal windows..."
-    close_all_terminal
+    TRACKED_WINDOWS=$(mktemp "${TMPDIR:-/tmp}/piles-benchmark.XXXXXX")
+    WINDOW_MARKER="piles-benchmark-$$-$datestamp"
+    WORKLOAD_PID=""
+    trap cleanup_benchmark EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
 
-    echo "opening $WINDOW_COUNT windows..."
+    echo ""
+    echo "opening $WINDOW_COUNT benchmark windows (existing windows are left alone)..."
     open_windows "$WINDOW_COUNT"
 
     echo "warming up ${WARMUP}s..."
@@ -204,7 +258,7 @@ run_benchmark() {
     echo ""
     echo "--- active phase (${ACTIVE_DURATION}s) ---"
     workload_loop &
-    local workload_pid=$!
+    WORKLOAD_PID=$!
 
     elapsed=0
     while (( elapsed < ACTIVE_DURATION )); do
@@ -212,12 +266,9 @@ run_benchmark() {
         (( elapsed += SAMPLE_INTERVAL ))
     done
 
-    kill "$workload_pid" 2>/dev/null || true
-    wait "$workload_pid" 2>/dev/null || true
-
     echo ""
-    echo "cleaning up..."
-    close_all_terminal
+    echo "cleaning up benchmark windows..."
+    cleanup_benchmark
 
     print_summary
 }
@@ -282,8 +333,7 @@ compare() {
     }' "$file1" "$file2"
 }
 
-# --- main ---
-
+main() {
 [[ $# -lt 1 ]] && usage
 
 cmd="$1"; shift
@@ -307,3 +357,8 @@ case "$cmd" in
         usage
         ;;
 esac
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

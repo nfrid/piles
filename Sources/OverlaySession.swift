@@ -43,6 +43,7 @@ final class OverlaySession {
     private weak var host: OverlaySessionHost?
 
     private(set) var isVisible = false
+    private var generation = 0
 
     init(host: OverlaySessionHost) {
         self.host = host
@@ -60,11 +61,13 @@ final class OverlaySession {
         guard let host else { return }
         host.overlayPrepareToShow()
         guard host.overlayPresent(animated: true, refreshing: false) else { return }
+        generation += 1
         isVisible = true
     }
 
     func hide() {
         guard isVisible else { return }
+        generation += 1
         isVisible = false
         host?.overlayDidHide()
         panelController.dismiss { [weak self] in
@@ -96,25 +99,33 @@ final class OverlaySession {
         case .passThrough:
             return false
         case .dismiss:
-            MainThread.run { self.hide() }
+            enqueue { _ in self.hide() }
             return true
         case .navigateHorizontal(let delta):
-            MainThread.run { host.overlayNavigateHorizontal(delta: delta) }
+            enqueue { $0.overlayNavigateHorizontal(delta: delta) }
             return true
         case .navigateVertical(let delta):
-            MainThread.run { host.overlayNavigateVertical(delta: delta) }
+            enqueue { $0.overlayNavigateVertical(delta: delta) }
             return true
         case .confirm:
-            MainThread.run { host.overlayConfirm() }
+            enqueue { $0.overlayConfirm() }
             return true
         case .numberJump(let index):
-            MainThread.run {
-                host.overlayNumberJump(index: index)
+            enqueue {
+                $0.overlayNumberJump(index: index)
                 self.hide()
             }
             return true
         case .unrecognized:
             return true
+        }
+    }
+
+    func enqueue(_ work: @escaping (OverlaySessionHost) -> Void) {
+        let generation = self.generation
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.isVisible, self.generation == generation, let host = self.host else { return }
+            work(host)
         }
     }
 

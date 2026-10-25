@@ -4,9 +4,6 @@ import ApplicationServices
 package final class WindowObserver {
     package static let shared = WindowObserver()
 
-    private static let maxRetries = 120
-    private static let retryInterval: TimeInterval = 0.05
-
     private static let appNotifications: [CFString] = [
         kAXWindowCreatedNotification,
         kAXFocusedWindowChangedNotification,
@@ -17,16 +14,22 @@ package final class WindowObserver {
         kAXUIElementDestroyedNotification,
         kAXMovedNotification,
         kAXResizedNotification,
+        kAXTitleChangedNotification,
     ].map { $0 as CFString }
 
     private var observers: [pid_t: AXObserver] = [:]
-    private var observedWindows: [pid_t: Set<WindowIdentityKey>] = [:]
+    private var observedWindows: [pid_t: [WindowIdentityKey: WindowNotificationSubscriptions]] = [:]
     private var workspaceObservers: [NSObjectProtocol] = []
     private var stopped = false
+    private var titleRefreshWork: DispatchWorkItem?
+    private lazy var syncScheduler = WindowSyncScheduler { [weak self] pid in
+        self?.syncWindows(pid: pid) ?? true
+    }
 
     private init() {}
 
     package func start() {
+        guard workspaceObservers.isEmpty else { return }
         stopped = false
         let nc = NSWorkspace.shared.notificationCenter
 
@@ -60,7 +63,7 @@ package final class WindowObserver {
             let pid = app.processIdentifier
             WorkspaceManager.shared.followExternalFocusDeferred(pid: pid)
             guard !WorkspaceManager.shared.hasTrackedWindows(pid: pid) else { return }
-            WindowObserver.shared.trySyncWindows(pid: pid, attempt: 0)
+            WindowObserver.shared.syncScheduler.sync(pid: pid)
         })
 
         workspaceObservers.append(nc.addObserver(
@@ -68,6 +71,7 @@ package final class WindowObserver {
             object: nil, queue: .main
         ) { note in
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+            WindowObserver.shared.syncScheduler.cancel(pid: app.processIdentifier)
             WorkspaceManager.shared.syncWindows(pid: app.processIdentifier, windows: [])
         })
 
@@ -78,20 +82,23 @@ package final class WindowObserver {
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
                   app.activationPolicy == .regular
             else { return }
-            WindowObserver.shared.trySyncWindows(pid: app.processIdentifier, attempt: 0)
+            WindowObserver.shared.syncScheduler.sync(pid: app.processIdentifier)
         })
 
         for app in NSWorkspace.shared.runningApplications {
             guard app.activationPolicy == .regular else { continue }
             let pid = app.processIdentifier
             observeApp(pid: pid)
-            trySyncWindows(pid: pid, attempt: 0)
+            syncScheduler.sync(pid: pid)
         }
     }
 
     package func stop() {
         guard !stopped else { return }
         stopped = true
+        syncScheduler.cancelAll()
+        titleRefreshWork?.cancel()
+        titleRefreshWork = nil
 
         let nc = NSWorkspace.shared.notificationCenter
         for token in workspaceObservers {
@@ -110,27 +117,30 @@ package final class WindowObserver {
         guard !stopped else { return }
         let pid = app.processIdentifier
         observeApp(pid: pid)
-        trySyncWindows(pid: pid, attempt: 0)
+        syncScheduler.sync(pid: pid)
     }
 
-    private func trySyncWindows(pid: pid_t, attempt: Int) {
-        guard !stopped else { return }
-        guard let windows = WindowManager.windows(pid: pid), !windows.isEmpty else {
-            DebugLog.write("sync retry pid=\(pid) attempt=\(attempt)")
-            retrySyncWindows(pid: pid, attempt: attempt)
-            return
-        }
+    private func syncWindows(pid: pid_t) -> Bool {
+        guard !stopped, !WindowManager.isAppHidden(pid: pid) else { return true }
+        guard let windows = WindowManager.windows(pid: pid), !windows.isEmpty else { return false }
 
-        DebugLog.write("sync pid=\(pid) attempt=\(attempt) windows=\(DebugLog.describe(windows))")
+        DebugLog.write("sync pid=\(pid) windows=\(DebugLog.describe(windows))")
         WorkspaceManager.shared.syncWindows(pid: pid, windows: windows)
         observeWindows(windows, pid: pid)
+        return true
     }
 
-    private func retrySyncWindows(pid: pid_t, attempt: Int) {
-        guard !stopped, attempt < Self.maxRetries else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.retryInterval) {
-            self.trySyncWindows(pid: pid, attempt: attempt + 1)
+    private func scheduleTitleRefresh() {
+        guard !stopped, titleRefreshWork == nil else { return }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, !self.stopped else { return }
+            self.titleRefreshWork = nil
+            WorkspaceOverview.shared.refreshIfVisible(windowTitlesChanged: true)
+            WorkspaceGlance.shared.refreshIfVisible(windowTitlesChanged: true)
+            MonocleBar.shared.update()
         }
+        titleRefreshWork = work
+        DispatchQueue.main.async(execute: work)
     }
 
     private func observeApp(pid: pid_t) {
@@ -150,6 +160,7 @@ package final class WindowObserver {
     }
 
     private func stopObservingApp(pid: pid_t) {
+        syncScheduler.cancel(pid: pid)
         guard let obs = observers.removeValue(forKey: pid) else { return }
 
         let appRef = AXUIElementCreateApplication(pid)
@@ -157,13 +168,13 @@ package final class WindowObserver {
             removeNotification(obs, appRef, notification, context: "pid=\(pid) target=app shutdown")
         }
 
-        if let keys = observedWindows.removeValue(forKey: pid) {
-            for key in keys {
-                for notification in Self.windowNotifications {
+        if let windows = observedWindows.removeValue(forKey: pid) {
+            for (key, subscriptions) in windows {
+                for notification in subscriptions.notifications {
                     removeNotification(
                         obs,
                         key.element,
-                        notification,
+                        notification as CFString,
                         context: "pid=\(pid) target=window shutdown"
                     )
                 }
@@ -183,22 +194,27 @@ package final class WindowObserver {
         if notif == kAXWindowCreatedNotification {
             MainThread.run {
                 WorkspaceManager.shared.prepareForWindowCreated(pid: pidValue)
-                WindowObserver.shared.trySyncWindows(pid: pidValue, attempt: 0)
+                WindowObserver.shared.syncScheduler.sync(pid: pidValue)
             }
         } else if notif == kAXUIElementDestroyedNotification {
             MainThread.run {
                 WindowObserver.shared.stopObservingWindow(element: element, pid: pidValue)
-                let windows = WindowManager.windows(pid: pidValue) ?? []
-                DebugLog.write("destroy sync pid=\(pidValue) windows=\(DebugLog.describe(windows))")
-                WorkspaceManager.shared.syncWindows(pid: pidValue, windows: windows)
+                if let windows = WindowManager.windows(pid: pidValue) {
+                    DebugLog.write("destroy sync pid=\(pidValue) windows=\(DebugLog.describe(windows))")
+                    WorkspaceManager.shared.syncWindows(pid: pidValue, windows: windows)
+                } else {
+                    WindowObserver.shared.syncScheduler.sync(pid: pidValue)
+                }
             }
+        } else if notif == kAXTitleChangedNotification {
+            MainThread.run { WindowObserver.shared.scheduleTitleRefresh() }
         } else if notif == kAXFocusedWindowChangedNotification || notif == kAXFocusedUIElementChangedNotification {
             WorkspaceManager.shared.followExternalFocus(pid: pidValue)
         } else if notif == kAXMovedNotification || notif == kAXResizedNotification {
             MainThread.run {
                 let handled = WorkspaceManager.shared.handleWindowGeometryChange(pid: pidValue, element: element)
                 guard !handled else { return }
-                WindowObserver.shared.trySyncWindows(pid: pidValue, attempt: 0)
+                WindowObserver.shared.syncScheduler.sync(pid: pidValue)
             }
         }
     }
@@ -206,23 +222,13 @@ package final class WindowObserver {
     private func observeWindow(element: AXUIElement, pid: pid_t) {
         guard let obs = observers[pid] else { return }
         let key = WindowIdentityKey(element: element)
-        var observed = observedWindows[pid] ?? []
-        guard observed.insert(key).inserted else { return }
-
-        var added: [CFString] = []
-        for notification in Self.windowNotifications {
-            guard addNotification(obs, element, notification, context: "pid=\(pid) target=window") else {
-                for previous in added {
-                    removeNotification(obs, element, previous, context: "pid=\(pid) target=window cleanup=partial")
-                }
-                observed.remove(key)
-                observedWindows[pid] = observed.isEmpty ? nil : observed
-                return
-            }
-            added.append(notification)
+        var subscriptions = observedWindows[pid]?[key] ?? WindowNotificationSubscriptions()
+        subscriptions.register(Self.windowNotifications) { notification in
+            addNotification(obs, element, notification, context: "pid=\(pid) target=window")
         }
-
-        observedWindows[pid] = observed
+        if !subscriptions.notifications.isEmpty {
+            observedWindows[pid, default: [:]][key] = subscriptions
+        }
     }
 
     private func observeWindows(_ windows: [TrackedWindow], pid: pid_t) {
@@ -237,11 +243,11 @@ package final class WindowObserver {
         guard let obs = observers[pid] else { return }
         let key = WindowIdentityKey(element: element)
         guard var observed = observedWindows[pid],
-              observed.remove(key) != nil
+              let subscriptions = observed.removeValue(forKey: key)
         else { return }
 
-        for notification in Self.windowNotifications {
-            removeNotification(obs, element, notification, context: "pid=\(pid) target=window")
+        for notification in subscriptions.notifications {
+            removeNotification(obs, element, notification as CFString, context: "pid=\(pid) target=window")
         }
         observedWindows[pid] = observed.isEmpty ? nil : observed
     }
@@ -254,7 +260,7 @@ package final class WindowObserver {
         context: @autoclosure () -> String
     ) -> Bool {
         let result = AXObserverAddNotification(observer, element, notification, nil)
-        guard result == .success else {
+        guard result == .success || result == .notificationAlreadyRegistered else {
             DebugLog.write("ax observer add failed result=\(result) notification=\(notification) context=\(context())")
             return false
         }
@@ -274,5 +280,64 @@ package final class WindowObserver {
             return false
         }
         return true
+    }
+}
+
+struct WindowNotificationSubscriptions {
+    private(set) var notifications: Set<String> = []
+
+    mutating func register(_ requested: [CFString], add: (CFString) -> Bool) {
+        for notification in requested where !notifications.contains(notification as String) {
+            if add(notification) {
+                notifications.insert(notification as String)
+            }
+        }
+    }
+}
+
+/// Keeps at most one bounded retry chain per application. All calls use the main queue.
+final class WindowSyncScheduler {
+    private struct Pending {
+        let generation: Int
+        let work: DispatchWorkItem
+    }
+
+    private var pending: [pid_t: Pending] = [:]
+    private var generation = 0
+    private let retryDelay: TimeInterval
+    private let maxRetries: Int
+    private let attempt: (pid_t) -> Bool
+
+    init(retryDelay: TimeInterval = 0.05, maxRetries: Int = 120, attempt: @escaping (pid_t) -> Bool) {
+        self.retryDelay = retryDelay
+        self.maxRetries = maxRetries
+        self.attempt = attempt
+    }
+
+    func sync(pid: pid_t) {
+        guard pending[pid] == nil else { return }
+        perform(pid: pid, retry: 0)
+    }
+
+    func cancel(pid: pid_t) {
+        pending.removeValue(forKey: pid)?.work.cancel()
+    }
+
+    func cancelAll() {
+        for retry in pending.values { retry.work.cancel() }
+        pending.removeAll()
+    }
+
+    private func perform(pid: pid_t, retry: Int) {
+        guard !attempt(pid), retry < maxRetries else { return }
+        generation += 1
+        let scheduledGeneration = generation
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.pending[pid]?.generation == scheduledGeneration else { return }
+            self.pending.removeValue(forKey: pid)
+            self.perform(pid: pid, retry: retry + 1)
+        }
+        pending[pid] = Pending(generation: scheduledGeneration, work: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + retryDelay, execute: work)
     }
 }

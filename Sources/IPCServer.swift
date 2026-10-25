@@ -36,12 +36,24 @@ package final class IPCServer {
         }
     }
 
-    package func reconfigure() {
+    @discardableResult
+    package func reconfigure() -> Bool {
         onQueue { [self] in
+            if Config.shared.ipcEnabled,
+               listenFD >= 0,
+               boundSocketPath == Config.shared.expandedIPCSocketPath,
+               let path = boundSocketPath,
+               let bound = boundSocketIdentity,
+               let current = socketIdentity(path),
+               current.0 == bound.0, current.1 == bound.1 {
+                return true
+            }
             stopOnQueue()
-            guard Config.shared.ipcEnabled, bindAndListen() else { return }
+            guard Config.shared.ipcEnabled else { return true }
+            guard bindAndListen() else { return false }
             generation += 1
             installAcceptSource()
+            return true
         }
     }
 
@@ -53,10 +65,13 @@ package final class IPCServer {
         generation += 1
         acceptSource?.cancel()
         acceptSource = nil
+        // Accept callbacks and descriptor ownership stay on this serial queue.
         if listenFD >= 0 {
             close(listenFD)
             listenFD = -1
         }
+        // Workers close their own descriptors. Shutdown interrupts their reads
+        // without a delayed close accidentally affecting a reused descriptor.
         for fd in activeClientFDs { shutdown(fd, SHUT_RDWR) }
         if let path = boundSocketPath {
             removeBoundSocket(path)
@@ -65,12 +80,11 @@ package final class IPCServer {
         }
     }
 
-    private func onQueue(_ work: () -> Void) {
+    private func onQueue<T>(_ work: () -> T) -> T {
         if DispatchQueue.getSpecific(key: queueKey) != nil {
-            work()
-        } else {
-            queue.sync(execute: work)
+            return work()
         }
+        return queue.sync(execute: work)
     }
 
     private func bindAndListen() -> Bool {
@@ -129,7 +143,6 @@ package final class IPCServer {
 
         listenFD = fd
         boundSocketPath = path
-        boundSocketIdentity = socketIdentity(path)
         fputs("piles: ipc listening on \(path)\n", stderr)
         return true
     }
@@ -319,16 +332,12 @@ package final class IPCServer {
     }
 
     private func finishClient(fd: Int32) {
-        onQueue { activeClientFDs.remove(fd) }
+        _ = onQueue { activeClientFDs.remove(fd) }
         close(fd)
     }
 
     private func isCurrent(generation: Int) -> Bool {
-        var current = false
-        onQueue {
-            current = listenFD >= 0 && self.generation == generation
-        }
-        return current
+        onQueue { listenFD >= 0 && self.generation == generation }
     }
 
     private func handleClient(fd: Int32, generation: Int) {

@@ -65,8 +65,8 @@ reinstall, restart the running app, and open it.
 - **config reload** - reload the config from the menubar without restarting
 - **ipc control** - `piles-ctl` sends commands over a unix socket so tools like
   Hammerspoon can trigger actions without faking key events
-- **crash safety** - windows are brought back onscreen on quit, SIGTERM, SIGINT,
-  and normal process exit
+- **clean shutdown** - windows are brought back onscreen on quit, SIGTERM, SIGINT,
+  and normal process exit. SIGKILL and fatal crashes bypass this cleanup
 
 ## Controls
 
@@ -94,8 +94,9 @@ The default modifier is option. You can change it to `control` or `command` in
 
 ## Config
 
-Config is optional and lives at `~/.config/piles/config.toml`. Start from
-`config.example.toml`:
+Config is optional and lives at `~/.config/piles/config.toml`. The parser supports
+the subset used in `config.example.toml`: quoted strings, numbers, booleans,
+tables, and arrays of tables. Start from that file:
 
 ```bash
 mkdir -p ~/.config/piles
@@ -166,7 +167,11 @@ Commands mirror hotkey actions: `workspace last`, `focus next|prev`,
 `window move next|prev`, `window close`, `layout toggle`, `master swap`,
 `monitor focus next|prev`, `monitor move next|prev`.
 
-Disable or relocate the socket in config:
+Commands have a two-second timeout. Existing files and active sockets at the
+configured path are not overwritten. Only one piles instance can manage windows
+at a time, even with IPC disabled.
+
+Disable or relocate the socket in config, then use Reload Config:
 
 ```toml
 ipc_enabled = true
@@ -194,7 +199,13 @@ make test
 make build
 ```
 
-The test target is a small executable, not XCTest.
+The test target is a small executable, not XCTest. `make test` also checks the
+benchmark's window tracking with mocked AppleScript calls. It does not move real
+windows.
+
+`make benchmark` opens temporary Terminal windows for its workload and closes
+only those windows on completion or interruption. Existing Terminal windows are
+left alone. Avoid adding your own tabs to benchmark windows while it runs.
 
 ## License
 

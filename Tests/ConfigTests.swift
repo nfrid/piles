@@ -1,4 +1,5 @@
 import CoreGraphics
+import Foundation
 @testable import PilesCore
 
 enum ConfigTests {
@@ -197,13 +198,23 @@ enum ConfigTests {
         do {
             check(Config.load(text: "workspace_count = 2\r\nmaster_ratio = 0.6"), "returns success for CRLF config")
             check(Config.shared.workspaceCount == 2, "parses CRLF lines")
-            let strings = (try? Toml.parse(#"quote = "open -a \"Google Chrome\"""# + "\n" + #"backslash = "\\""# + "\n" + #"controls = "tab\tline\nnext\r""# + "\n" + #"hash = "inside # string" # comment"#)) ?? [:]
+            let strings = (try? Toml.parse(#"""
+            quote = "open -a \"Google Chrome\""
+            backslash = "\\"
+            controls = "tab\tline\nnext\r"
+            hash = "inside # string" # comment
+            """#)) ?? [:]
             check(strings["quote"] as? String == "open -a \"Google Chrome\"", "decodes escaped quote in command")
             check(strings["backslash"] as? String == "\\", "decodes escaped backslash")
             check(strings["controls"] as? String == "tab\tline\nnext\r", "decodes tab, newline, and carriage return")
             check(strings["hash"] as? String == "inside # string", "preserves hash in string and strips trailing comment")
-            check(Config.load(text: #"command = "open -a \"Google Chrome\"""#), "returns success for escaped quotes")
-            check(Config.load(text: #"command = "line\nnext""#), "returns success for escaped newline")
+            check(Config.load(text: #"""
+            workspace_count = 3
+            [[custom]]
+            key = "t"
+            command = "open -a \"Google Chrome\""
+            """#), "loads a custom shell command with escaped quotes")
+            check(Config.shared.customBindings.first?.command == "open -a \"Google Chrome\"", "config preserves decoded shell quoting")
             var before = Config.shared
             check(!Config.load(text: #"command = "bad\q""#), "returns failure for invalid escape")
             check(Config.shared.workspaceCount == before.workspaceCount, "invalid escape retains previous config")
@@ -220,6 +231,26 @@ enum ConfigTests {
             check(parsed == nil, "parser returns nil on TOML parse error")
             check(diagnostics.count == 1, "parser reports parse error once")
             check(diagnostics[0].hasPrefix("config parse error:"), "parser captures parse error diagnostic")
+        }
+
+        do {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("piles-config-tests-\(UUID().uuidString)")
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let file = directory.appendingPathComponent("config.toml")
+            try "workspace_count = 2".write(to: file, atomically: true, encoding: .utf8)
+            check(Config.load(path: file.path), "loads configuration from a file")
+            check(Config.shared.workspaceCount == 2, "applies the file's configuration")
+            try Data([0xFF]).write(to: file)
+            check(!Config.load(path: file.path), "invalid UTF-8 reports a read failure")
+            check(Config.shared.workspaceCount == 2, "read failure preserves the active configuration")
+            check(!Config.load(path: directory.path), "an unreadable config path is not treated as a missing file")
+            check(Config.shared.workspaceCount == 2, "an unreadable path preserves the active configuration")
+            try FileManager.default.removeItem(at: file)
+            check(Config.load(path: file.path), "missing optional config is a successful load")
+            check(Config.shared.workspaceCount == Config().workspaceCount, "missing config resets to defaults")
+        } catch {
+            check(false, "configuration file tests failed: \(error)")
         }
 
         Config.shared = Config()
