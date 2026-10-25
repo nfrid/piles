@@ -51,32 +51,33 @@ enum AXClientTests {
         )
         check(writes.isEmpty, "unavailable value does not trigger writes")
 
+        writes = []
         var ran = false
         AXClient.withEnhancedUserInterfaceDisabled(
             isAssistiveTechnologyEnabled: false,
             read: { true },
-            write: { _ in false },
+            write: { enabled in writes.append(enabled); return false },
             operation: { ran = true }
         )
-        check(ran, "operation runs when disabling fails")
+        check(ran && writes == [false], "failed disable still runs operation without restoring")
 
         writes = []
-        var operationValue: Bool?
-        _ = AXClient.withEnhancedUserInterfaceDisabled(
+        let failedGeometryResult = AXClient.withEnhancedUserInterfaceDisabled(
             isAssistiveTechnologyEnabled: false,
             read: { true },
             write: { enabled in writes.append(enabled); return true },
-            operation: { operationValue = false; return false }
+            operation: { false }
         )
-        check(operationValue == false && writes == [false, true], "restoration runs after a false geometry result")
+        check(!failedGeometryResult && writes == [false, true], "restores after a false geometry result")
 
+        writes = []
         let geometryResult = AXClient.withEnhancedUserInterfaceDisabled(
             isAssistiveTechnologyEnabled: false,
             read: { true },
-            write: { enabled in enabled },
-            operation: { false }
+            write: { enabled in writes.append(enabled); return !enabled },
+            operation: { true }
         )
-        check(!geometryResult, "restoration failure does not replace geometry result")
+        check(geometryResult && writes == [false, true], "failed restoration preserves successful geometry result")
 
         return (passed, failed)
     }
