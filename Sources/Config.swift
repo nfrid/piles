@@ -203,30 +203,33 @@ package struct Config {
         return map
     }
 
-    package static func load() {
+    @discardableResult
+    package static func load() -> Bool {
         let path = NSString("~/.config/piles/config.toml").expandingTildeInPath
         guard FileManager.default.fileExists(atPath: path) else {
             shared = Config()
-            return
+            return true
         }
 
         guard let data = FileManager.default.contents(atPath: path),
               let text = String(data: data, encoding: .utf8)
         else {
             fputs("piles: failed to read config file\n", stderr)
-            return
+            return false
         }
 
-        load(text: text)
+        return load(text: text)
     }
 
-    package static func load(text: String) {
+    @discardableResult
+    package static func load(text: String) -> Bool {
         guard let config = ConfigParser.parse(text: text, diagnose: {
             fputs("piles: \($0)\n", stderr)
         }) else {
-            return
+            return false
         }
         shared = config
+        return true
     }
 
     package func assignment(app: String?, bundleID: String?, title: String?) -> WindowAssignment? {

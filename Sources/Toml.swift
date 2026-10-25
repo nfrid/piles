@@ -15,9 +15,9 @@ package enum Toml {
         var currentTable: String?
         var currentArrayTable: String?
 
-        for (lineNumber, raw) in text.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
-            let line = stripComment(raw)
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
+        for (lineNumber, raw) in text.unicodeScalars.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
+            let line = stripComment(String(String.UnicodeScalarView(raw)))
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.isEmpty { continue }
 
             if trimmed.hasPrefix("[[") && trimmed.hasSuffix("]]") {
@@ -73,24 +73,24 @@ package enum Toml {
         return root
     }
 
-    private static func stripComment(_ raw: Substring) -> Substring {
+    private static func stripComment(_ raw: String) -> String {
         var inString = false
         var escaped = false
-        for (offset, char) in raw.enumerated() {
+        for (offset, scalar) in raw.unicodeScalars.enumerated() {
             if escaped {
                 escaped = false
                 continue
             }
-            if char == "\\", inString {
+            if scalar == "\\", inString {
                 escaped = true
                 continue
             }
-            if char == "\"" {
+            if scalar == "\"" {
                 inString.toggle()
                 continue
             }
-            if char == "#", !inString {
-                return raw[..<raw.index(raw.startIndex, offsetBy: offset)]
+            if scalar == "#", !inString {
+                return String(String.UnicodeScalarView(raw.unicodeScalars.prefix(offset)))
             }
         }
         return raw
@@ -98,10 +98,37 @@ package enum Toml {
 
     private static func parseValue(_ s: String, line: Int) throws -> Any {
         if s.hasPrefix("\"") {
-            guard s.count >= 2, s.hasSuffix("\"") else {
-                throw Error.parse(line: line, message: "unterminated string")
+            var value = ""
+            var scalars = s.unicodeScalars.dropFirst().makeIterator()
+            while let scalar = scalars.next() {
+                if scalar == "\"" {
+                    guard scalars.next() == nil else {
+                        throw Error.parse(line: line, message: "unexpected trailing tokens after string")
+                    }
+                    return value
+                }
+                if scalar == "\\" {
+                    guard let escaped = scalars.next() else {
+                        throw Error.parse(line: line, message: "invalid escape")
+                    }
+                    switch escaped {
+                    case "b": value.append("\u{8}")
+                    case "t": value.append("\t")
+                    case "n": value.append("\n")
+                    case "f": value.append("\u{c}")
+                    case "r": value.append("\r")
+                    case "\"": value.append("\"")
+                    case "\\": value.append("\\")
+                    default: throw Error.parse(line: line, message: "invalid escape")
+                    }
+                } else {
+                    guard scalar.value >= 0x20 else {
+                        throw Error.parse(line: line, message: "control character in string")
+                    }
+                    value.unicodeScalars.append(scalar)
+                }
             }
-            return String(s.dropFirst().dropLast())
+            throw Error.parse(line: line, message: "unterminated string")
         }
         if s == "true" { return true }
         if s == "false" { return false }

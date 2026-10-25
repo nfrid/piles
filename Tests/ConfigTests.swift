@@ -195,11 +195,25 @@ enum ConfigTests {
         }
 
         do {
-            let before = Config.shared
-            var diagnostics: [String] = []
-            Config.load(text: "workspace_count =")
+            check(Config.load(text: "workspace_count = 2\r\nmaster_ratio = 0.6"), "returns success for CRLF config")
+            check(Config.shared.workspaceCount == 2, "parses CRLF lines")
+            let strings = (try? Toml.parse(#"quote = "open -a \"Google Chrome\"""# + "\n" + #"backslash = "\\""# + "\n" + #"controls = "tab\tline\nnext\r""# + "\n" + #"hash = "inside # string" # comment"#)) ?? [:]
+            check(strings["quote"] as? String == "open -a \"Google Chrome\"", "decodes escaped quote in command")
+            check(strings["backslash"] as? String == "\\", "decodes escaped backslash")
+            check(strings["controls"] as? String == "tab\tline\nnext\r", "decodes tab, newline, and carriage return")
+            check(strings["hash"] as? String == "inside # string", "preserves hash in string and strips trailing comment")
+            check(Config.load(text: #"command = "open -a \"Google Chrome\"""#), "returns success for escaped quotes")
+            check(Config.load(text: #"command = "line\nnext""#), "returns success for escaped newline")
+            var before = Config.shared
+            check(!Config.load(text: #"command = "bad\q""#), "returns failure for invalid escape")
+            check(Config.shared.workspaceCount == before.workspaceCount, "invalid escape retains previous config")
+            check(!Config.load(text: #"command = "bad"tail"#), "returns failure for trailing string tokens")
+            check(!Config.load(text: #"command = "bad"quote""#), "returns failure for unescaped quote")
+            before = Config.shared
+            check(!Config.load(text: "workspace_count ="), "returns failure on parse error")
             check(Config.shared.workspaceCount == before.workspaceCount, "load keeps existing config on parse error")
 
+            var diagnostics: [String] = []
             let parsed = ConfigParser.parse(text: "workspace_count =") {
                 diagnostics.append($0)
             }
