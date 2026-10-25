@@ -32,13 +32,47 @@ enum MonitorTests {
             monitor.state.workspaces[0] = [kept, removed]
 
             check(
-                monitor.removeStaleWindows(pid: 5002, current: [kept]),
+                monitor.removeStaleWindows(pid: 5002, current: [kept]) { $0.pid == 5002 },
                 "removeStaleWindows reports change"
             )
             check(
                 monitor.state.workspaces[0].map(\.pid) == [5001],
-                "removeStaleWindows drops windows missing from sync list"
+                "removeStaleWindows drops confirmed-invalid windows missing from sync list"
             )
+
+            monitor.state.workspaces[0] = [removed]
+            check(
+                !monitor.removeStaleWindows(pid: 5002, current: []) { _ in false },
+                "removeStaleWindows retains windows after uncertain AX errors"
+            )
+        }
+
+        do {
+            let monitor = Monitor(displayID: 0, screen: screen)
+            let invalid = testWindow(pid: 5051)
+            let live = testWindow(pid: 5052)
+            monitor.state.workspaces[0] = [invalid, live]
+            monitor.state.focusedIndices[0] = 1
+            var notifications = 0
+            monitor.onStateChange = { notifications += 1 }
+            _ = monitor.cleanActiveWorkspace(
+                attributesFor: { _ in nil },
+                isConfirmedInvalid: { $0 == invalid }
+            )
+            check(monitor.state.workspaces[0] == [live], "cleanup removes confirmed-invalid window and preserves live uncertain window")
+            check(monitor.state.focusedIndices[0] == 0, "cleanup repairs focus after invalid removal")
+            check(notifications == 1, "cleanup notifies workspace owner after membership and focus change")
+
+            monitor.state.workspaces[0] = [invalid, live]
+            monitor.state.focusedIndices[0] = 1
+            _ = monitor.cleanActiveWorkspace(
+                applyChanges: false,
+                attributesFor: { _ in nil },
+                isConfirmedInvalid: { $0 == invalid }
+            )
+            check(monitor.state.workspaces[0] == [invalid, live], "non-mutating cleanup leaves workspace membership unchanged")
+            check(monitor.state.focusedIndices[0] == 1, "non-mutating cleanup leaves focus unchanged")
+            check(notifications == 1, "non-mutating cleanup does not notify workspace owner")
         }
 
         do {
@@ -85,6 +119,50 @@ enum MonitorTests {
             check(cleaned.windows.map(\.pid) == [5201, 5202, 5203], "clean keeps trackable windows in order")
             check(cleaned.snapshots.count == 3, "clean returns one snapshot per kept window")
             check(cleaned.snapshots.allSatisfy(\.isTileable), "clean snapshots expose tileable attributes")
+        }
+
+        do {
+            let unknown = testWindow(pid: 5251)
+            let cleaned = Monitor.cleanActiveWorkspaceWindows([unknown]) { _ in nil }
+            check(cleaned.windows == [unknown], "clean retains a window after an uncertain AX read")
+            check(cleaned.snapshots.isEmpty, "clean excludes unknown windows from geometry snapshots")
+
+            let unknownMinimized = WindowAttributes(
+                role: kAXWindowRole,
+                subrole: kAXStandardWindowSubrole,
+                minimized: false,
+                fullscreen: false,
+                minimizedKnown: false
+            )
+            let minimizedReadFailed = Monitor.cleanActiveWorkspaceWindows([unknown]) { _ in unknownMinimized }
+            check(minimizedReadFailed.windows == [unknown], "clean retains a standard window when minimized read fails")
+            check(minimizedReadFailed.snapshots.isEmpty, "clean excludes unknown minimized state from geometry")
+
+            let missingSubrole = WindowAttributes(
+                role: kAXWindowRole,
+                subrole: nil,
+                minimized: false,
+                fullscreen: false
+            )
+            let partialRole = Monitor.cleanActiveWorkspaceWindows([unknown]) { _ in missingSubrole }
+            check(partialRole.windows == [unknown], "clean retains a window when role or subrole is unknown")
+            check(partialRole.snapshots.isEmpty, "clean excludes partial role data from geometry")
+
+            let invalid = Monitor.cleanActiveWorkspaceWindows(
+                [unknown],
+                attributesFor: { _ in nil },
+                isConfirmedInvalid: { _ in true }
+            )
+            check(invalid.windows.isEmpty, "clean removes nil-attribute windows confirmed invalid")
+
+            let unknownFullscreen = WindowAttributes(
+                role: kAXWindowRole,
+                subrole: kAXStandardWindowSubrole,
+                minimized: false,
+                fullscreen: false,
+                fullscreenKnown: false
+            )
+            check(!unknownFullscreen.isTileable, "unknown fullscreen state prevents geometry writes")
         }
 
         do {

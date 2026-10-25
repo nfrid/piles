@@ -389,6 +389,9 @@ package final class WorkspaceManager {
                 )
             }
             .sorted { $0.screen.frame.origin.x < $1.screen.frame.origin.x }
+        for monitor in monitors {
+            monitor.onStateChange = { [weak self] in self?.commitChanges() }
+        }
     }
 
     private func beginManagedWorkspaceSwitch(from previous: Int, to index: Int) {

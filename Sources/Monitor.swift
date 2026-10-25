@@ -19,6 +19,7 @@ package final class Monitor {
     let displayID: CGDirectDisplayID
     var screen: NSScreen
     var state = MonitorState()
+    var onStateChange: (() -> Void)?
 
     subscript<T>(dynamicMember keyPath: WritableKeyPath<MonitorState, T>) -> T {
         get { state[keyPath: keyPath] }
@@ -198,10 +199,14 @@ package final class Monitor {
         return result.changed
     }
 
-    func removeStaleWindows(pid: pid_t, current: [TrackedWindow]) -> Bool {
+    func removeStaleWindows(
+        pid: pid_t,
+        current: [TrackedWindow],
+        isConfirmedInvalid: (TrackedWindow) -> Bool = { WindowManager.isConfirmedInvalid($0.element) }
+    ) -> Bool {
         removeWindows { window in
             guard window.pid == pid, !current.contains(window) else { return false }
-            guard !window.isTrackable() else { return false }
+            guard isConfirmedInvalid(window) else { return false }
             DebugLog.write("monitor \(displayID) stale pid=\(pid) window=\(DebugLog.describe(window))")
             return true
         }
@@ -331,20 +336,23 @@ package final class Monitor {
 
     static func cleanActiveWorkspaceWindows(
         _ windows: [TrackedWindow],
-        attributesFor: (TrackedWindow) -> WindowAttributes?
+        attributesFor: (TrackedWindow) -> WindowAttributes?,
+        isConfirmedInvalid: (TrackedWindow) -> Bool = { _ in false }
     ) -> (windows: [TrackedWindow], snapshots: [ActiveWindowSnapshot]) {
         var focusedIndex = 0
         return cleanActiveWorkspaceWindows(
             windows,
             focusedIndex: &focusedIndex,
-            attributesFor: attributesFor
+            attributesFor: attributesFor,
+            isConfirmedInvalid: isConfirmedInvalid
         )
     }
 
     static func cleanActiveWorkspaceWindows(
         _ windows: [TrackedWindow],
         focusedIndex: inout Int,
-        attributesFor: (TrackedWindow) -> WindowAttributes?
+        attributesFor: (TrackedWindow) -> WindowAttributes?,
+        isConfirmedInvalid: (TrackedWindow) -> Bool = { _ in false }
     ) -> (windows: [TrackedWindow], snapshots: [ActiveWindowSnapshot]) {
         let originalFocus = Swift.min(
             Swift.max(focusedIndex, 0),
@@ -360,10 +368,21 @@ package final class Monitor {
 
         for window in windows {
             let identityKeys = window.identityKeys
-            guard seenIdentities.isDisjoint(with: identityKeys),
-                  let attributes = attributesFor(window),
-                  attributes.isTrackable
-            else { continue }
+            guard seenIdentities.isDisjoint(with: identityKeys) else { continue }
+            guard let attributes = attributesFor(window) else {
+                if !isConfirmedInvalid(window) {
+                    kept.append(window)
+                    seenIdentities.formUnion(identityKeys)
+                }
+                continue
+            }
+            guard attributes.isTrackable else {
+                if !attributes.trackabilityKnown {
+                    kept.append(window)
+                    seenIdentities.formUnion(identityKeys)
+                }
+                continue
+            }
             seenIdentities.formUnion(identityKeys)
             kept.append(window)
             snapshots.append(ActiveWindowSnapshot(window: window, attributes: attributes))
@@ -381,19 +400,32 @@ package final class Monitor {
     }
 
     @discardableResult
-    private func cleanActiveWorkspace() -> [ActiveWindowSnapshot] {
+    func cleanActiveWorkspace(
+        applyChanges: Bool = true,
+        attributesFor: (TrackedWindow) -> WindowAttributes? = { $0.attributes() },
+        isConfirmedInvalid: (TrackedWindow) -> Bool = { WindowManager.isConfirmedInvalid($0.element) }
+    ) -> [ActiveWindowSnapshot] {
         var focusedIndex = state.focusedIndices[state.active]
+        let originalWindows = state.workspaces[state.active]
+        let originalFocus = state.focusedIndices[state.active]
         let cleaned = Self.cleanActiveWorkspaceWindows(
-            state.workspaces[state.active],
-            focusedIndex: &focusedIndex
-        ) { $0.attributes() }
-        state.workspaces[state.active] = cleaned.windows
-        state.focusedIndices[state.active] = focusedIndex
+            originalWindows,
+            focusedIndex: &focusedIndex,
+            attributesFor: attributesFor,
+            isConfirmedInvalid: isConfirmedInvalid
+        )
+        if applyChanges {
+            state.workspaces[state.active] = cleaned.windows
+            state.focusedIndices[state.active] = focusedIndex
+            if cleaned.windows != originalWindows || focusedIndex != originalFocus {
+                onStateChange?()
+            }
+        }
         return cleaned.snapshots
     }
 
     private func activeWorkspaceMatchesLayout(tolerance: CGFloat) -> Bool {
-        guard let layout = activeLayoutFrames() else { return true }
+        guard let layout = activeLayoutFrames(applyCleanup: false) else { return true }
         guard layout.frames.count == layout.windows.count else { return false }
 
         for i in layout.windows.indices {
@@ -404,9 +436,10 @@ package final class Monitor {
         return true
     }
 
-    private func activeLayoutFrames() -> (windows: [TrackedWindow], frames: [CGRect], screen: CGRect)? {
-        let snapshots = cleanActiveWorkspace()
-        guard !snapshots.contains(where: \.isFullscreen) else { return nil }
+    private func activeLayoutFrames(applyCleanup: Bool = true) -> (windows: [TrackedWindow], frames: [CGRect], screen: CGRect)? {
+        let snapshots = cleanActiveWorkspace(applyChanges: applyCleanup)
+        guard snapshots.count == state.workspaces[state.active].count else { return nil }
+        guard !snapshots.contains(where: { !$0.attributes.fullscreenKnown || $0.isFullscreen }) else { return nil }
 
         let windows = snapshots
             .filter(\.isTileable)

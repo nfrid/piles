@@ -37,17 +37,33 @@ struct WindowAttributes {
     let subrole: String?
     let minimized: Bool
     let fullscreen: Bool
+    let minimizedKnown: Bool
+    let fullscreenKnown: Bool
+
+    init(role: String?, subrole: String?, minimized: Bool, fullscreen: Bool, minimizedKnown: Bool = true, fullscreenKnown: Bool = true) {
+        self.role = role
+        self.subrole = subrole
+        self.minimized = minimized
+        self.fullscreen = fullscreen
+        self.minimizedKnown = minimizedKnown
+        self.fullscreenKnown = fullscreenKnown
+    }
 
     var isStandardWindow: Bool {
         role == kAXWindowRole && subrole == kAXStandardWindowSubrole
     }
 
+    var trackabilityKnown: Bool {
+        guard role != nil, subrole != nil else { return false }
+        return !isStandardWindow || minimizedKnown
+    }
+
     var isTrackable: Bool {
-        isStandardWindow && !minimized
+        isStandardWindow && minimizedKnown && !minimized
     }
 
     var isTileable: Bool {
-        isTrackable && !fullscreen
+        isTrackable && fullscreenKnown && !fullscreen
     }
 }
 
@@ -102,13 +118,17 @@ enum WindowManager {
     static func attributes(of element: AXUIElement) -> WindowAttributes? {
         let role = axStringAttribute(element, kAXRoleAttribute as CFString)
         let subrole = axStringAttribute(element, kAXSubroleAttribute as CFString)
-        guard role != nil || subrole != nil else { return nil }
+        let minimized = axBoolAttribute(element, kAXMinimizedAttribute as CFString)
+        let fullscreen = axBoolAttribute(element, "AXFullScreen" as CFString)
+        guard role != nil || subrole != nil || minimized != nil || fullscreen != nil else { return nil }
 
         return WindowAttributes(
             role: role,
             subrole: subrole,
-            minimized: axBoolAttribute(element, kAXMinimizedAttribute as CFString) ?? false,
-            fullscreen: axBoolAttribute(element, "AXFullScreen" as CFString) ?? false
+            minimized: minimized ?? false,
+            fullscreen: fullscreen ?? false,
+            minimizedKnown: minimized != nil,
+            fullscreenKnown: fullscreen != nil
         )
     }
 
@@ -202,8 +222,15 @@ enum WindowManager {
         attributes(of: element)?.isTrackable ?? false
     }
 
+    static func isConfirmedInvalid(_ element: AXUIElement) -> Bool {
+        var value: AnyObject?
+        let result = AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &value)
+        return result == .invalidUIElement
+    }
+
     static func isFullscreen(_ element: AXUIElement) -> Bool {
-        attributes(of: element)?.fullscreen ?? false
+        guard let attributes = attributes(of: element), attributes.fullscreenKnown else { return true }
+        return attributes.fullscreen
     }
 
     static func isTileable(_ element: AXUIElement) -> Bool {
