@@ -10,6 +10,8 @@ package enum IPCClient {
         }
     }
 
+    package static let maximumResponseBytes = 1_048_576
+
     package static func request(
         _ command: String,
         socketPath: String,
@@ -89,14 +91,25 @@ package enum IPCClient {
 
         var response = Data()
         var chunk = [UInt8](repeating: 0, count: 256)
-        while response.count < 4096 {
+        while response.count <= maximumResponseBytes {
             guard DispatchTime.now().uptimeNanoseconds < deadlineNanos else {
                 return .failure(StringError("recv timed out"))
             }
             let count = recv(fd, &chunk, chunk.count, 0)
             if count > 0 {
-                response.append(contentsOf: chunk[..<count])
-                if response.contains(10) { break }
+                let received = chunk[..<count]
+                if let newline = received.firstIndex(of: 10) {
+                    response.append(contentsOf: received[..<newline])
+                    guard response.count <= maximumResponseBytes else {
+                        return .failure(StringError("response exceeds 1 MiB limit"))
+                    }
+                    response.append(10)
+                    break
+                }
+                response.append(contentsOf: received)
+                guard response.count <= maximumResponseBytes else {
+                    return .failure(StringError("response exceeds 1 MiB limit"))
+                }
                 continue
             }
             if count == 0 { break }
@@ -110,8 +123,14 @@ package enum IPCClient {
             return .failure(StringError("recv: \(String(cString: strerror(errno)))"))
         }
 
+        guard response.last == 10 else {
+            if response.count >= Self.maximumResponseBytes {
+                return .failure(StringError("response exceeds 1 MiB limit"))
+            }
+            return .failure(StringError(response.isEmpty ? "empty response from piles" : "truncated response from piles"))
+        }
         guard let text = String(data: response, encoding: .utf8), !text.isEmpty else {
-            return .failure(StringError("empty response from piles"))
+            return .failure(StringError("response is not valid UTF-8"))
         }
         return .success(text)
     }

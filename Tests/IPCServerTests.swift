@@ -285,12 +285,52 @@ enum IPCServerTests {
                 guard recv(fd, &byte, 1, 0) == 1 else { return }
                 received.append(byte)
             }
-            let response = Array("pong\n".utf8)
-            response.withUnsafeBytes { raw in
-                _ = Darwin.send(fd, raw.baseAddress!, raw.count, 0)
-            }
+            guard sendAll(fd, Data("pong\n".utf8)) else { return }
         }
         if case .success("pong\n") = response { passed += 1 } else { failed += 1 }
+
+        let longResponse = runFake(".long-response", timeout: 1, command: "windows\n") { fd in
+            var received = [UInt8]()
+            var byte: UInt8 = 0
+            while received.last != 10 {
+                guard recv(fd, &byte, 1, 0) == 1 else { return }
+                received.append(byte)
+            }
+            let data = Data(repeating: 120, count: 8_000) + Data([10])
+            guard sendAll(fd, data) else { return }
+        }
+        if case .success(let text) = longResponse, text.utf8.count == 8_001 { passed += 1 } else { failed += 1 }
+
+        let truncated = runFake(".truncated", timeout: 1, command: "ping\n") { fd in
+            var byte: UInt8 = 0
+            while recv(fd, &byte, 1, 0) == 1 && byte != 10 {}
+            guard sendAll(fd, Data("partial".utf8)) else { return }
+        }
+        if case .failure(let error) = truncated, error.message == "truncated response from piles" { passed += 1 } else { failed += 1 }
+
+        let oversized = runFake(".oversized", timeout: 1, command: "windows\n") { fd in
+            var byte: UInt8 = 0
+            while recv(fd, &byte, 1, 0) == 1 && byte != 10 {}
+            let data = Data(repeating: 120, count: IPCClient.maximumResponseBytes + 1)
+            guard sendAll(fd, data) else { return }
+        }
+        if case .failure(let error) = oversized, error.message == "response exceeds 1 MiB limit" { passed += 1 } else { failed += 1 }
+
+        let exactLimit = runFake(".exact-limit", timeout: 2, command: "status\n") { fd in
+            var byte: UInt8 = 0
+            while recv(fd, &byte, 1, 0) == 1 && byte != 10 {}
+            var data = Data(repeating: 120, count: IPCClient.maximumResponseBytes - 1)
+            data.append(10)
+            guard sendAll(fd, data) else { return }
+        }
+        if case .success(let text) = exactLimit, text.utf8.count == IPCClient.maximumResponseBytes { passed += 1 } else { failed += 1 }
+
+        let trailing = runFake(".trailing", timeout: 1, command: "status\n") { fd in
+            var byte: UInt8 = 0
+            while recv(fd, &byte, 1, 0) == 1 && byte != 10 {}
+            guard sendAll(fd, Data("ok\nignored".utf8)) else { return }
+        }
+        if case .success("ok\n") = trailing { passed += 1 } else { failed += 1 }
 
         let sendStart = DispatchTime.now().uptimeNanoseconds
         let nonReader = runFake(".send-timeout", timeout: 0.15, command: String(repeating: "x", count: 8 * 1024 * 1024)) { _ in
@@ -299,6 +339,23 @@ enum IPCServerTests {
         let sendElapsed = Double(DispatchTime.now().uptimeNanoseconds - sendStart) / 1_000_000_000
         if case .failure(let error) = nonReader, error.message == "send timed out", sendElapsed < 1 { passed += 1 } else { failed += 1 }
         return (passed, failed)
+    }
+
+    private static func sendAll(_ fd: Int32, _ data: Data) -> Bool {
+        var sent = 0
+        while sent < data.count {
+            let count = data.withUnsafeBytes { raw in
+                Darwin.send(fd, raw.baseAddress!.advanced(by: sent), data.count - sent, 0)
+            }
+            if count > 0 {
+                sent += count
+            } else if count < 0 && errno == EINTR {
+                continue
+            } else {
+                return false
+            }
+        }
+        return true
     }
 
     private static func connect(to path: String) -> Int32? {

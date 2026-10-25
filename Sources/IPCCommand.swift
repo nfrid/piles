@@ -1,9 +1,16 @@
+package enum IPCCommand: Equatable {
+    case ping
+    case action(HotkeyAction)
+    case status
+    case windows
+}
+
 package enum IPCCommandParser {
     package enum ParseError: Error, Equatable {
         case invalid(String)
     }
 
-    package static func parse(_ line: String, workspaceCount: Int) -> Result<HotkeyAction, ParseError> {
+    package static func parse(_ line: String, workspaceCount: @autoclosure () -> Int) -> Result<IPCCommand, ParseError> {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             return .failure(.invalid("empty command"))
@@ -17,41 +24,45 @@ package enum IPCCommandParser {
         switch verb {
         case "ping":
             guard parts.count == 1 else { return .failure(.invalid("ping takes no arguments")) }
-            return .success(.passThrough)
+            return .success(.ping)
+
+        case "status":
+            guard parts.count == 1 else { return .failure(.invalid("status takes no arguments")) }
+            return .success(.status)
+
+        case "windows":
+            guard parts.count == 1 else { return .failure(.invalid("windows takes no arguments")) }
+            return .success(.windows)
 
         case "workspace":
-            return parseWorkspace(parts.dropFirst(), workspaceCount: workspaceCount)
+            return parseWorkspace(parts.dropFirst(), workspaceCount: workspaceCount()).map(IPCCommand.action)
 
         case "overview":
             guard parts.count == 1 else { return .failure(.invalid("overview takes no arguments")) }
-            return .success(.toggleWorkspaceOverview)
+            return .success(.action(.toggleWorkspaceOverview))
 
         case "glance":
             guard parts.count == 1 else { return .failure(.invalid("glance takes no arguments")) }
-            return .success(.toggleWorkspaceGlance)
+            return .success(.action(.toggleWorkspaceGlance))
 
         case "focus":
-            return parseFocus(parts.dropFirst())
+            return parseFocus(parts.dropFirst()).map(IPCCommand.action)
 
         case "window":
-            return parseWindow(parts.dropFirst())
+            return parseWindow(parts.dropFirst()).map(IPCCommand.action)
 
         case "layout":
-            return parseLayout(parts.dropFirst())
+            return parseLayout(parts.dropFirst()).map(IPCCommand.action)
 
         case "master":
-            return parseMaster(parts.dropFirst())
+            return parseMaster(parts.dropFirst()).map(IPCCommand.action)
 
         case "monitor":
-            return parseMonitor(parts.dropFirst())
+            return parseMonitor(parts.dropFirst()).map(IPCCommand.action)
 
         default:
             return .failure(.invalid("unknown command '\(verb)'"))
         }
-    }
-
-    package static func isPing(_ line: String) -> Bool {
-        line.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "ping"
     }
 
     private static func parseWorkspace(

@@ -7,6 +7,8 @@ private func printUsage() {
         usage: piles-ctl [--socket PATH] <command>
         commands:
           ping
+          status
+          windows
           workspace <1-9> [--move]
           workspace next|prev [--move]
           workspace last
@@ -24,7 +26,7 @@ private func printUsage() {
     )
 }
 
-private func parseArgs(_ args: [String]) -> (socketPath: String?, command: String)? {
+private func parseArgs(_ args: [String]) -> (socketPath: String?, commandParts: [String])? {
     var socketPath: String?
     var commandParts: [String] = []
     var index = args.startIndex
@@ -46,7 +48,7 @@ private func parseArgs(_ args: [String]) -> (socketPath: String?, command: Strin
     }
 
     guard !commandParts.isEmpty else { return nil }
-    return (socketPath, commandParts.joined(separator: " "))
+    return (socketPath, commandParts)
 }
 
 @main
@@ -66,7 +68,7 @@ enum PilesCtl {
             path = Config.shared.expandedIPCSocketPath
         }
 
-        let command = parsed.command + "\n"
+        let command = parsed.commandParts.joined(separator: " ") + "\n"
         switch IPCClient.request(command, socketPath: path) {
         case .success(let response):
             print(response.trimmingCharacters(in: .newlines))

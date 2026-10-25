@@ -343,28 +343,42 @@ package final class IPCServer {
     private func handleClient(fd: Int32, generation: Int) {
         guard let line = readLine(fd: fd), isCurrent(generation: generation) else { return }
 
-        if IPCCommandParser.isPing(line) {
-            writeResponse(fd: fd, "pong\n")
-            return
-        }
-
-        let workspaceCount = MainThread.runSync { Config.shared.workspaceCount }
-        switch IPCCommandParser.parse(line, workspaceCount: workspaceCount) {
+        switch IPCCommandParser.parse(line, workspaceCount: MainThread.runSync { Config.shared.workspaceCount }) {
         case .failure(.invalid(let message)):
             writeResponse(fd: fd, "error: \(message)\n")
-        case .success(let action):
-            guard action != .passThrough else {
-                writeResponse(fd: fd, "error: invalid command\n")
-                return
+        case .success(.ping):
+            writeResponse(fd: fd, "pong\n")
+        case .success(.status):
+            let response = MainThread.runSync { [self] in
+                guard isCurrent(generation: generation) else { return nil as String? }
+                return encode(DiagnosticsSnapshot.status(from: WorkspaceManager.shared))
             }
+            if let response { writeResponse(fd: fd, response + "\n") }
+        case .success(.windows):
+            let response = MainThread.runSync { [self] in
+                guard isCurrent(generation: generation) else { return nil as String? }
+                return encode(DiagnosticsSnapshot.windows(from: WorkspaceManager.shared))
+            }
+            if let response { writeResponse(fd: fd, response + "\n") }
+        case .success(.action(let action)):
             let performed = DispatchQueue.main.sync { [self] in
                 guard isCurrent(generation: generation) else { return false }
                 ActionDispatcher.perform(action)
                 return true
             }
-            if performed {
-                writeResponse(fd: fd, "ok\n")
+            if performed { writeResponse(fd: fd, "ok\n") }
+        }
+    }
+
+    private func encode<T: Encodable>(_ value: T) -> String {
+        do {
+            let data = try JSONEncoder().encode(value)
+            guard let json = String(data: data, encoding: .utf8) else {
+                return "error: diagnostics response is not valid UTF-8"
             }
+            return json
+        } catch {
+            return "error: could not encode diagnostics response: \(error.localizedDescription)"
         }
     }
 
