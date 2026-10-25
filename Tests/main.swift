@@ -1,5 +1,8 @@
 import Dispatch
 
+fputs("running ax client tests...\n", stderr)
+let (p13, f13) = AXClientTests.runAll()
+
 fputs("running tiler tests...\n", stderr)
 let (p1, f1) = TilerTests.runAll()
 
@@ -36,8 +39,8 @@ let (p12, f12) = MonocleBarTests.runAll()
 fputs("running performance tests...\n", stderr)
 let (p2, f2) = TilerPerformanceTests.runAll()
 
-let passed = p1 + p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9 + p10 + p11 + p12
-let failed = f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8 + f9 + f10 + f11 + f12
+let passed = p1 + p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9 + p10 + p11 + p12 + p13
+let failed = f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8 + f9 + f10 + f11 + f12 + f13
 
 fputs("\n\(passed) passed, \(failed) failed\n", stderr)
 

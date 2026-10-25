@@ -57,6 +57,12 @@ struct TrackedWindow: Equatable {
 
     @discardableResult
     func setPosition(_ point: CGPoint) -> Bool {
+        AXClient.withEnhancedUserInterfaceDisabled(for: pid) {
+            setPositionUnchecked(point)
+        }
+    }
+
+    private func setPositionUnchecked(_ point: CGPoint) -> Bool {
         var p = point
         guard let value = AXValueCreate(.cgPoint, &p) else {
             DebugLog.write("ax value create failed type=cgPoint pid=\(pid)")
@@ -74,8 +80,7 @@ struct TrackedWindow: Equatable {
         return success
     }
 
-    @discardableResult
-    func setSize(_ size: CGSize) -> Bool {
+    private func setSize(_ size: CGSize) -> Bool {
         var s = size
         guard let value = AXValueCreate(.cgSize, &s) else {
             DebugLog.write("ax value create failed type=cgSize pid=\(pid)")
@@ -110,9 +115,11 @@ struct TrackedWindow: Equatable {
 
     @discardableResult
     func setFrameUnchecked(_ rect: CGRect) -> Bool {
-        let positioned = setPosition(rect.origin)
-        let sized = setSize(rect.size)
-        return positioned && sized
+        AXClient.withEnhancedUserInterfaceDisabled(for: pid) {
+            let positioned = setPositionUnchecked(rect.origin)
+            let sized = setSize(rect.size)
+            return positioned && sized
+        }
     }
 
     @discardableResult
