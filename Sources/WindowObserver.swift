@@ -122,11 +122,11 @@ package final class WindowObserver {
 
     private func syncWindows(pid: pid_t) -> Bool {
         guard !stopped, !WindowManager.isAppHidden(pid: pid) else { return true }
-        guard let windows = WindowManager.windows(pid: pid), !windows.isEmpty else { return false }
-
-        DebugLog.write("sync pid=\(pid) windows=\(DebugLog.describe(windows))")
-        WorkspaceManager.shared.syncWindows(pid: pid, windows: windows)
-        observeWindows(windows, pid: pid)
+        guard WindowSnapshotReconciliation.applyOrdinary(WindowManager.windows(pid: pid), sync: { windows in
+            DebugLog.write("sync pid=\(pid) windows=\(DebugLog.describe(windows))")
+            WorkspaceManager.shared.syncWindows(pid: pid, windows: windows)
+            observeWindows(windows, pid: pid)
+        }) else { return false }
         return true
     }
 
@@ -199,10 +199,18 @@ package final class WindowObserver {
         } else if notif == kAXUIElementDestroyedNotification {
             MainThread.run {
                 WindowObserver.shared.stopObservingWindow(element: element, pid: pidValue)
-                if let windows = WindowManager.windows(pid: pidValue) {
-                    DebugLog.write("destroy sync pid=\(pidValue) windows=\(DebugLog.describe(windows))")
-                    WorkspaceManager.shared.syncWindows(pid: pidValue, windows: windows)
-                } else {
+                let windows = WindowManager.windows(pid: pidValue)
+                WindowSnapshotReconciliation.applyDestroyed(
+                    element,
+                    snapshot: windows,
+                    remove: { WorkspaceManager.shared.removeWindow(element: $0) },
+                    sync: { current in
+                        DebugLog.write("destroy sync pid=\(pidValue) windows=\(DebugLog.describe(current))")
+                        WorkspaceManager.shared.syncWindows(pid: pidValue, windows: current)
+                        WindowObserver.shared.observeWindows(current, pid: pidValue)
+                    }
+                )
+                if windows == nil {
                     WindowObserver.shared.syncScheduler.sync(pid: pidValue)
                 }
             }
@@ -286,6 +294,38 @@ package final class WindowObserver {
             return false
         }
         return true
+    }
+}
+
+enum WindowSnapshotReconciliation {
+    static func applyOrdinary(_ snapshot: [TrackedWindow]?, sync: ([TrackedWindow]) -> Void) -> Bool {
+        guard let snapshot, !snapshot.isEmpty else { return false }
+        sync(snapshot)
+        return true
+    }
+
+    static func applyDestroyed(
+        _ element: AXUIElement,
+        snapshot: [TrackedWindow]?,
+        remove: (AXUIElement) -> Void,
+        sync: ([TrackedWindow]) -> Void
+    ) {
+        if let snapshot {
+            let current = snapshot.compactMap { window in
+                window.containsElement(element) ? window.withoutMember(element) : window
+            }
+            if !current.isEmpty { sync(current) }
+        }
+        remove(element)
+    }
+}
+
+extension TrackedWindow {
+    func withoutMember(_ element: AXUIElement) -> TrackedWindow? {
+        let identity = WindowIdentityKey(element: element)
+        let remaining = members.filter { WindowIdentityKey(element: $0) != identity }
+        guard let first = remaining.first else { return nil }
+        return TrackedWindow(element: first, pid: pid, members: Array(remaining.dropFirst()), group: group)
     }
 }
 

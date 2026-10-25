@@ -14,6 +14,78 @@ enum WindowObserverTests {
             }
         }
 
+        let destroyedElement = AXUIElementCreateApplication(9101)
+        let survivingElement = AXUIElementCreateApplication(9102)
+        let destroyedWindow = TrackedWindow(element: destroyedElement, pid: 9101)
+        let survivingWindow = TrackedWindow(element: survivingElement, pid: 9102)
+        var removedElement: AXUIElement?
+        var destroySync: [TrackedWindow]?
+        var destroyOrder: [String] = []
+        var fallbackAfterRemoval: Int?
+        WindowSnapshotReconciliation.applyDestroyed(
+            destroyedElement,
+            snapshot: [destroyedWindow, survivingWindow],
+            remove: {
+                removedElement = $0
+                destroyOrder.append("remove")
+                fallbackAfterRemoval = WorkspaceManager.closeFallbackTarget(
+                    isFocusedMonitor: true,
+                    wasActiveOccupied: true,
+                    activeIsEmpty: (destroySync?.isEmpty ?? true),
+                    nextOccupied: 2
+                )
+            },
+            sync: {
+                destroySync = $0
+                destroyOrder.append("sync")
+            }
+        )
+        check(removedElement.map { WindowIdentityKey(element: $0) } == WindowIdentityKey(element: destroyedElement),
+              "destroy event removes its exact AX identity")
+        check(destroySync?.count == 1 && destroySync?.first?.containsElement(survivingElement) == true,
+              "stale destroy snapshot cannot resurrect destroyed window or drop another window")
+        check(destroyOrder == ["sync", "remove"],
+              "surviving snapshot windows reconcile before destroy removal and fallback")
+        check(fallbackAfterRemoval == nil,
+              "newly discovered survivor prevents an empty-workspace fallback")
+
+        let groupedFirst = AXUIElementCreateApplication(9103)
+        let groupedSecond = AXUIElementCreateApplication(9104)
+        let groupedWindow = TrackedWindow(element: groupedFirst, pid: 9103, members: [groupedSecond])
+        var groupedSync: [TrackedWindow]?
+        WindowSnapshotReconciliation.applyDestroyed(
+            groupedFirst,
+            snapshot: [groupedWindow],
+            remove: { _ in },
+            sync: { groupedSync = $0 }
+        )
+        check(groupedSync?.count == 1 && groupedSync?.first?.containsElement(groupedSecond) == true,
+              "destroying one grouped member preserves its live sibling")
+        check(groupedSync?.first?.containsElement(groupedFirst) == false,
+              "destroyed grouped member is absent from reconciled entry")
+
+        var ordinarySyncCount = 0
+        check(!WindowSnapshotReconciliation.applyOrdinary(nil) { _ in ordinarySyncCount += 1 },
+              "nil ordinary snapshot is not authoritative")
+        check(!WindowSnapshotReconciliation.applyOrdinary([]) { _ in ordinarySyncCount += 1 },
+              "empty ordinary snapshot is not authoritative")
+        check(ordinarySyncCount == 0, "uncertain ordinary snapshots preserve tracked entries")
+        check(WorkspaceManager.closeFallbackTarget(
+            isFocusedMonitor: false, wasActiveOccupied: true, activeIsEmpty: true, nextOccupied: 2
+        ) == nil, "close on another monitor does not steal focus")
+        check(WorkspaceManager.closeFallbackTarget(
+            isFocusedMonitor: true, wasActiveOccupied: true, activeIsEmpty: true, nextOccupied: 2
+        ) == 2, "last focused active close selects the next occupied workspace")
+        check(WorkspaceManager.closeFallbackTarget(
+            isFocusedMonitor: true, wasActiveOccupied: false, activeIsEmpty: true, nextOccupied: 2
+        ) == nil, "a previously empty workspace does not trigger fallback")
+        check(WorkspaceManager.closeFallbackTarget(
+            isFocusedMonitor: true, wasActiveOccupied: true, activeIsEmpty: false, nextOccupied: 2
+        ) == nil, "close does not switch while active workspace remains occupied")
+        check(WorkspaceManager.closeFallbackTarget(
+            isFocusedMonitor: true, wasActiveOccupied: true, activeIsEmpty: true, nextOccupied: nil
+        ) == nil, "close has no fallback when no occupied workspace exists")
+
         var subscriptions = WindowNotificationSubscriptions()
         let requested = [kAXUIElementDestroyedNotification, kAXMovedNotification,
                          kAXResizedNotification, kAXTitleChangedNotification].map { $0 as CFString }

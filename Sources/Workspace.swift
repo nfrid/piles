@@ -237,6 +237,60 @@ package final class WorkspaceManager {
         removeWindows { $0.hasElement(window) }
     }
 
+    func removeWindow(element: AXUIElement) {
+        var changed = false
+        var monitorsToRetile: [Monitor] = []
+        var focusedMonitorFallback: (Monitor, Int)?
+        for monitor in monitors {
+            let isFocusedMonitor = monitor === focusedMonitor
+            let wasActiveOccupied = !monitor.workspaces[monitor.active].isEmpty
+            var replacements: [(TrackedWindow, TrackedWindow, Int)] = []
+            for workspaceIndex in monitor.workspaces.indices {
+                for window in monitor.workspaces[workspaceIndex] where window.containsElement(element) {
+                    if let remaining = window.withoutMember(element) {
+                        replacements.append((window, remaining, workspaceIndex))
+                    }
+                }
+            }
+
+            let removal = monitor.state.removeWindows { window in
+                window.containsElement(element) && window.withoutMember(element) == nil
+            }
+            changed = changed || removal.changed || !replacements.isEmpty
+            var activeNeedsRetile = removal.activeChanged
+            for (old, replacement, workspaceIndex) in replacements {
+                monitor.state.replaceWindow(old, with: replacement)
+                activeNeedsRetile = activeNeedsRetile || workspaceIndex == monitor.active
+            }
+            if activeNeedsRetile { monitorsToRetile.append(monitor) }
+
+            if let target = WorkspaceManager.closeFallbackTarget(
+                isFocusedMonitor: isFocusedMonitor,
+                wasActiveOccupied: wasActiveOccupied,
+                activeIsEmpty: monitor.workspaces[monitor.active].isEmpty,
+                nextOccupied: monitor.nextOccupiedWorkspace(offset: 1)
+            ) {
+                focusedMonitorFallback = (monitor, target)
+            }
+        }
+        guard changed else { return }
+        for monitor in monitorsToRetile where monitor !== focusedMonitorFallback?.0 {
+            monitor.retile()
+        }
+        if let (monitor, target) = focusedMonitorFallback { monitor.switchTo(target) }
+        commitChanges()
+    }
+
+    static func closeFallbackTarget(
+        isFocusedMonitor: Bool,
+        wasActiveOccupied: Bool,
+        activeIsEmpty: Bool,
+        nextOccupied: Int?
+    ) -> Int? {
+        guard isFocusedMonitor, wasActiveOccupied, activeIsEmpty else { return nil }
+        return nextOccupied
+    }
+
     private func removeWindows(where predicate: (TrackedWindow) -> Bool) {
         var changed = false
         for monitor in monitors {
