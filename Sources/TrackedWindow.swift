@@ -210,7 +210,7 @@ struct TrackedWindow: Equatable {
     }
 
     func displayTitle(fallback: String = "Window") -> String {
-        if let title = title()?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
+        if let title = title().map(Self.normalizedDisplayTitle), !title.isEmpty {
             return title
         }
         if let appName = appName()?.trimmingCharacters(in: .whitespacesAndNewlines), !appName.isEmpty {
@@ -222,9 +222,17 @@ struct TrackedWindow: Equatable {
     func displayLabels() -> (appName: String, windowTitle: String) {
         let trimmedApp = appName()?.trimmingCharacters(in: .whitespacesAndNewlines)
         let appName = (trimmedApp?.isEmpty == false) ? trimmedApp! : "App"
-        let trimmedTitle = title()?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let windowTitle = (trimmedTitle?.isEmpty == false) ? trimmedTitle! : "Untitled window"
+        let normalizedTitle = title().map(Self.normalizedDisplayTitle)
+        let windowTitle = (normalizedTitle?.isEmpty == false) ? normalizedTitle! : "Untitled window"
         return (appName, windowTitle)
+    }
+
+    static func normalizedDisplayTitle(_ title: String) -> String {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.first == "\u{180E}" else { return trimmed }
+
+        let prefix = trimmed.drop(while: { $0 == "\u{180E}" || $0 == "\u{200D}" })
+        return String(prefix).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     func bundleID() -> String? {
