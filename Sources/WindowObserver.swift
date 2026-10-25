@@ -231,6 +231,12 @@ package final class WindowObserver {
         }
     }
 
+    func observeRescanWindows(_ windows: [TrackedWindow], pid: pid_t) {
+        guard !stopped else { return }
+        observeApp(pid: pid)
+        observeWindows(windows, pid: pid)
+    }
+
     private func observeWindows(_ windows: [TrackedWindow], pid: pid_t) {
         for window in windows {
             for member in window.members {

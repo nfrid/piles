@@ -395,24 +395,34 @@ package final class WorkspaceManager {
         }
     }
 
+    static func rescanBatches(
+        discovered: [TrackedWindow],
+        tracked: [TrackedWindow]
+    ) -> [(pid: pid_t, windows: [TrackedWindow])] {
+        var batches: [(pid: pid_t, windows: [TrackedWindow])] = []
+        var batchIndices: [pid_t: Int] = [:]
+        for window in discovered {
+            if let index = batchIndices[window.pid] {
+                batches[index].windows.append(window)
+            } else {
+                batchIndices[window.pid] = batches.count
+                batches.append((window.pid, [window]))
+            }
+        }
+        for window in tracked where batchIndices[window.pid] == nil {
+            batchIndices[window.pid] = batches.count
+            batches.append((window.pid, []))
+        }
+        return batches
+    }
+
     func rescan() -> RescanReport {
         guard !monitors.isEmpty else { return RescanReport(discoveredWindows: 0, unavailableApplications: 0) }
         let inventory = WindowManager.scanWindows()
-        let incoming = Dictionary(grouping: inventory.windows, by: \.pid)
-        var pids: [pid_t] = []
-        var seen: Set<pid_t> = []
-        for window in inventory.windows where seen.insert(window.pid).inserted {
-            pids.append(window.pid)
-        }
-        for monitor in monitors {
-            for workspace in monitor.workspaces {
-                for window in workspace where seen.insert(window.pid).inserted {
-                    pids.append(window.pid)
-                }
-            }
-        }
-        for pid in pids {
-            syncWindows(pid: pid, windows: incoming[pid] ?? [], commit: false)
+        let tracked = monitors.flatMap { $0.workspaces.flatMap { $0 } }
+        for batch in Self.rescanBatches(discovered: inventory.windows, tracked: tracked) {
+            syncWindows(pid: batch.pid, windows: batch.windows, commit: false)
+            WindowObserver.shared.observeRescanWindows(batch.windows, pid: batch.pid)
         }
         for monitor in monitors { monitor.retile() }
         commitChanges()
