@@ -1,3 +1,4 @@
+import AppKit
 import ApplicationServices
 import Foundation
 @testable import PilesCore
@@ -166,6 +167,79 @@ enum WindowObserverTests {
         canceled.cancelAll()
         drainMainQueue()
         check(canceledAttempts == 2, "cancel and stop prevent queued retries, including restarted PIDs")
+
+        let dialogWindow = TrackedWindow(element: AXUIElementCreateApplication(105), pid: 105)
+        let standardAttributes = WindowAttributes(
+            role: kAXWindowRole, subrole: kAXStandardWindowSubrole,
+            minimized: false, fullscreen: false
+        )
+        let dialogAttributes = WindowAttributes(
+            role: kAXWindowRole, subrole: kAXDialogSubrole,
+            minimized: false, fullscreen: false
+        )
+        var transitionMonitor = MonitorState(count: 1)
+        transitionMonitor.insertWindow(dialogWindow)
+        let transitionScreens = NSScreen.screens
+        if let screen = transitionScreens.first {
+            let monitor = Monitor(displayID: 0, screen: screen)
+            monitor.state = transitionMonitor
+            var transitionAttempt = 0
+            let attributes: [WindowAttributes?] = [standardAttributes, nil, dialogAttributes]
+            let transition = WindowSyncScheduler(retryDelay: 0, maxRetries: 4) { _ in
+                let current = attributes[min(transitionAttempt, attributes.count - 1)]
+                transitionAttempt += 1
+                _ = monitor.removeStaleWindows(
+                    pid: 105, current: [], attributesFor: { _ in current }, isConfirmedInvalid: { _ in false }
+                )
+                return !monitor.containsWindow(dialogWindow)
+            }
+            transition.sync(pid: 105)
+            waitUntil { transitionAttempt == 3 }
+            check(transitionAttempt == 3 && !monitor.containsWindow(dialogWindow),
+                  "hide retries retain standard and unknown attributes, then remove known dialog")
+
+            monitor.state.insertWindow(dialogWindow)
+            var exhaustedAttempt = 0
+            let exhausted = WindowSyncScheduler(retryDelay: 0, maxRetries: 2) { _ in
+                let current: WindowAttributes? = exhaustedAttempt == 0 ? standardAttributes : nil
+                exhaustedAttempt += 1
+                _ = monitor.removeStaleWindows(
+                    pid: 105, current: [], attributesFor: { _ in current }, isConfirmedInvalid: { _ in false }
+                )
+                return !monitor.containsWindow(dialogWindow)
+            }
+            exhausted.sync(pid: 105)
+            waitUntil { exhaustedAttempt == 3 }
+            check(exhaustedAttempt == 3 && monitor.containsWindow(dialogWindow),
+                  "retry exhaustion retains a live standard window after unknown attributes")
+        } else {
+            check(false, "hide retry tests require a screen")
+        }
+
+        var hidden = true
+        var guardedAttempts = 0
+        let guarded = WindowSyncScheduler(retryDelay: 0, maxRetries: 3) { _ in
+            guard hidden else { return true }
+            guardedAttempts += 1
+            return false
+        }
+        guarded.sync(pid: 106)
+        hidden = false
+        guarded.cancel(pid: 106)
+        drainMainQueue()
+        check(guardedAttempts == 1, "unhide cancellation prevents queued hide cleanup retries")
+
+        var unhiddenAttempts = 0
+        let staleHide = WindowSyncScheduler(retryDelay: 0, maxRetries: 3) { _ in
+            guard hidden else { return true }
+            unhiddenAttempts += 1
+            return false
+        }
+        hidden = true
+        staleHide.sync(pid: 107)
+        hidden = false
+        drainMainQueue()
+        check(unhiddenAttempts == 1, "a queued hide attempt rechecks hidden state before cleanup")
         return (passed, failed)
     }
 

@@ -32,7 +32,7 @@ enum MonitorTests {
             monitor.state.workspaces[0] = [kept, removed]
 
             check(
-                monitor.removeStaleWindows(pid: 5002, current: [kept]) { $0.pid == 5002 },
+                monitor.removeStaleWindows(pid: 5002, current: [kept], isConfirmedInvalid: { $0.pid == 5002 }),
                 "removeStaleWindows reports change"
             )
             check(
@@ -42,8 +42,36 @@ enum MonitorTests {
 
             monitor.state.workspaces[0] = [removed]
             check(
-                !monitor.removeStaleWindows(pid: 5002, current: []) { _ in false },
+                !monitor.removeStaleWindows(pid: 5002, current: [], attributesFor: { _ in nil }) { _ in false },
                 "removeStaleWindows retains windows after uncertain AX errors"
+            )
+
+            let dialog = testWindow(pid: 5003)
+            let unknown = testWindow(pid: 5004)
+            let standard = testWindow(pid: 5005)
+            monitor.state.workspaces[0] = [dialog, unknown, standard]
+            let dialogAttributes = WindowAttributes(
+                role: kAXWindowRole, subrole: kAXDialogSubrole,
+                minimized: false, fullscreen: false
+            )
+            let standardAttributes = WindowAttributes(
+                role: kAXWindowRole, subrole: kAXStandardWindowSubrole,
+                minimized: false, fullscreen: false
+            )
+            check(
+                monitor.removeStaleWindows(pid: 5003, current: [], attributesFor: { window in
+                    window == standard ? standardAttributes : (window == dialog ? dialogAttributes : nil)
+                }, isConfirmedInvalid: { _ in false }),
+                "stale cleanup removes a live window with known untrackable dialog attributes"
+            )
+            check(monitor.state.workspaces[0] == [unknown, standard], "stale cleanup preserves unknown and standard windows")
+            monitor.state.workspaces[0] = [unknown]
+            let partialAttributes = WindowAttributes(
+                role: kAXWindowRole, subrole: nil, minimized: false, fullscreen: false
+            )
+            check(
+                !monitor.removeStaleWindows(pid: 5004, current: [], attributesFor: { _ in partialAttributes }) { _ in false },
+                "stale cleanup preserves partially known role attributes"
             )
         }
 

@@ -25,6 +25,11 @@ package final class WindowObserver {
     private lazy var syncScheduler = WindowSyncScheduler { [weak self] pid in
         self?.syncWindows(pid: pid) ?? true
     }
+    private lazy var hideCleanupScheduler = WindowSyncScheduler(retryDelay: 0.05, maxRetries: 4) { pid in
+        guard !WindowManager.isAppHidden(pid: pid) else { return true }
+        WorkspaceManager.shared.syncWindows(pid: pid, windows: [], hiddenCleanup: true)
+        return !WorkspaceManager.shared.hasStoredWindows(pid: pid)
+    }
 
     private init() {}
 
@@ -50,6 +55,7 @@ package final class WindowObserver {
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
             let pid = app.processIdentifier
             WorkspaceManager.shared.removeWindow(pid: pid)
+            WindowObserver.shared.hideCleanupScheduler.cancel(pid: pid)
             WindowObserver.shared.stopObservingApp(pid: pid)
         })
 
@@ -71,8 +77,10 @@ package final class WindowObserver {
             object: nil, queue: .main
         ) { note in
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
-            WindowObserver.shared.syncScheduler.cancel(pid: app.processIdentifier)
-            WorkspaceManager.shared.syncWindows(pid: app.processIdentifier, windows: [])
+            let observer = WindowObserver.shared
+            let pid = app.processIdentifier
+            observer.syncScheduler.cancel(pid: pid)
+            observer.hideCleanupScheduler.sync(pid: pid)
         })
 
         workspaceObservers.append(nc.addObserver(
@@ -82,7 +90,9 @@ package final class WindowObserver {
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
                   app.activationPolicy == .regular
             else { return }
-            WindowObserver.shared.syncScheduler.sync(pid: app.processIdentifier)
+            let observer = WindowObserver.shared
+            observer.hideCleanupScheduler.cancel(pid: app.processIdentifier)
+            observer.syncScheduler.sync(pid: app.processIdentifier)
         })
 
         for app in NSWorkspace.shared.runningApplications {
@@ -97,6 +107,7 @@ package final class WindowObserver {
         guard !stopped else { return }
         stopped = true
         syncScheduler.cancelAll()
+        hideCleanupScheduler.cancelAll()
         titleRefreshWork?.cancel()
         titleRefreshWork = nil
 
@@ -161,6 +172,7 @@ package final class WindowObserver {
 
     private func stopObservingApp(pid: pid_t) {
         syncScheduler.cancel(pid: pid)
+        hideCleanupScheduler.cancel(pid: pid)
         guard let obs = observers.removeValue(forKey: pid) else { return }
 
         let appRef = AXUIElementCreateApplication(pid)

@@ -213,11 +213,15 @@ package final class Monitor {
     func removeStaleWindows(
         pid: pid_t,
         current: [TrackedWindow],
+        attributesFor: (TrackedWindow) -> WindowAttributes? = { $0.attributes() },
         isConfirmedInvalid: (TrackedWindow) -> Bool = { WindowManager.isConfirmedInvalid($0.element) }
     ) -> Bool {
         removeWindows { window in
             guard window.pid == pid, !current.contains(window) else { return false }
-            guard isConfirmedInvalid(window) else { return false }
+            let attributes = attributesFor(window)
+            guard isConfirmedInvalid(window) || attributes.map({ $0.trackabilityKnown && !$0.isTrackable }) == true else {
+                return false
+            }
             DebugLog.write("monitor \(displayID) stale pid=\(pid) window=\(DebugLog.describe(window))")
             return true
         }

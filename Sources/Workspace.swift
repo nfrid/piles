@@ -205,14 +205,29 @@ package final class WorkspaceManager {
         return result
     }
 
-    func syncWindows(pid: pid_t, windows: [TrackedWindow], commit: Bool = true) {
+    func syncWindows(pid: pid_t, windows: [TrackedWindow], commit: Bool = true, hiddenCleanup: Bool = false) {
         DebugLog.write("workspace sync begin pid=\(pid) windows=\(DebugLog.describe(windows))")
         let hadTrackedWindows = hasTrackedWindows(pid: pid)
+        let focusedWasOccupied = !focusedMonitor.workspaces[focusedMonitor.active].isEmpty
         var changed = false
+        var focusedMonitorFallback: Int?
         for monitor in monitors {
             if monitor.removeStaleWindows(pid: pid, current: windows) {
                 changed = true
             }
+            if hiddenCleanup, monitor === focusedMonitor,
+               let target = WorkspaceManager.closeFallbackTarget(
+                   isFocusedMonitor: true,
+                   wasActiveOccupied: focusedWasOccupied,
+                   activeIsEmpty: monitor.workspaces[monitor.active].isEmpty,
+                   nextOccupied: monitor.nextOccupiedWorkspace(offset: 1)
+               ) {
+                focusedMonitorFallback = target
+            }
+        }
+        if let target = focusedMonitorFallback {
+            focusedMonitor.switchTo(target)
+            changed = true
         }
 
         for window in windows {
@@ -656,6 +671,12 @@ package final class WorkspaceManager {
 
         guard let result else { return nil }
         return (result.window, result.location)
+    }
+
+    func hasStoredWindows(pid: pid_t) -> Bool {
+        monitors.contains { monitor in
+            monitor.workspaces.contains { workspace in workspace.contains { $0.pid == pid } }
+        }
     }
 
     package func hasTrackedWindows(pid: pid_t) -> Bool {
