@@ -73,6 +73,24 @@ enum IPCServerTests {
             check(send("ping\n", to: path) == "pong\n", "first sequential ping request")
             check(send("ping\n", to: path) == "pong\n", "second sequential ping request")
 
+            // Never bootstrap monitors here. Even rescan must stay a no-op on real windows.
+            check(WorkspaceManager.shared.monitors.isEmpty, "IPC diagnostics fixture has no live monitors")
+            if WorkspaceManager.shared.monitors.isEmpty {
+                let status = queryPumpingMain("status\n", path: path).flatMap {
+                    try? JSONDecoder().decode(DiagnosticsStatus.self, from: Data($0.utf8))
+                }
+                check(status?.monitors.isEmpty == true && status?.focused_monitor == nil, "status returns a valid empty snapshot over IPC")
+                let windows = queryPumpingMain("windows\n", path: path).flatMap {
+                    try? JSONDecoder().decode(DiagnosticsWindows.self, from: Data($0.utf8))
+                }
+                check(windows?.windows.isEmpty == true, "windows returns a valid empty snapshot over IPC")
+                let rescan = queryPumpingMain("rescan\n", path: path).flatMap {
+                    (try? JSONSerialization.jsonObject(with: Data($0.utf8))) as? [String: Int]
+                }
+                check(rescan?["discovered_windows"] == 0 && rescan?["unavailable_apps"] == 0,
+                      "rescan without monitors returns an empty report without scanning real windows")
+            }
+
             if let idleClient = connect(to: path) {
                 usleep(100_000)
                 check(send("ping\n", to: path) == "pong\n", "idle client does not block another client")
@@ -204,6 +222,31 @@ enum IPCServerTests {
         passed += clientResults.passed
         failed += clientResults.failed
         return (passed, failed)
+    }
+
+    private final class PendingQuery {
+        var result: Result<String, IPCClient.StringError>?
+        let finished = DispatchSemaphore(value: 0)
+    }
+
+    private static func queryPumpingMain(_ command: String, path: String) -> String? {
+        let query = PendingQuery()
+        DispatchQueue.global().async {
+            query.result = IPCClient.request(command, socketPath: path, timeout: 1)
+            query.finished.signal()
+        }
+        let deadline = DispatchTime.now().uptimeNanoseconds + 2_000_000_000
+        while query.finished.wait(timeout: .now()) == .timedOut {
+            guard DispatchTime.now().uptimeNanoseconds < deadline else { return nil }
+            _ = RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.01))
+        }
+        switch query.result {
+        case .success(let response): return response
+        case .failure(let error):
+            fputs("IPC query failed: \(error.message)\n", stderr)
+            return nil
+        case nil: return nil
+        }
     }
 
     private static func waitForSocket(_ path: String) -> Bool {

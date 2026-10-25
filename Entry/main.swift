@@ -44,6 +44,17 @@ func setupCrashSafety() {
     }
 }
 
+let arguments = Array(CommandLine.arguments.dropFirst())
+if arguments == ["--help"] || arguments == ["-h"] {
+    print("usage: piles [--rescue]")
+    exit(0)
+}
+guard arguments.isEmpty || arguments == ["--rescue"] else {
+    fputs("usage: piles [--rescue]\n", stderr)
+    exit(2)
+}
+let isRescue = arguments == ["--rescue"]
+
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
 
@@ -66,6 +77,17 @@ guard checkAccessibility() else {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
     }
     exit(1)
+}
+
+if isRescue {
+    switch WindowRecovery.rescue() {
+    case .failure(.noScreens):
+        fputs("piles: rescue failed: no usable screens\n", stderr)
+        exit(1)
+    case .success(let report):
+        print("restored=\(report.restored) skipped=\(report.skipped) failed=\(report.failed) unavailable_apps=\(report.unavailableApplications)")
+        exit(report.hasFailures ? 1 : 0)
+    }
 }
 
 Config.load()

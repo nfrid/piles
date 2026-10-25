@@ -46,6 +46,9 @@ enum IPCCommandTests {
         check(IPCCommandParser.parse("windows", workspaceCount: 9) == .success(.windows), "windows parses")
         rejects("status now")
         rejects("windows now")
+        check(IPCCommandParser.parse("rescan", workspaceCount: 9) == .success(.rescan), "rescan parses")
+        rejects("rescan now")
+        rejects("rescue")
 
         resolves("workspace 3", to: .switchTo(2))
         resolves("\tworkspace\t3\n", to: .switchTo(2))

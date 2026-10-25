@@ -3,6 +3,7 @@ package enum IPCCommand: Equatable {
     case action(HotkeyAction)
     case status
     case windows
+    case rescan
 }
 
 package enum IPCCommandParser {
@@ -33,6 +34,10 @@ package enum IPCCommandParser {
         case "windows":
             guard parts.count == 1 else { return .failure(.invalid("windows takes no arguments")) }
             return .success(.windows)
+
+        case "rescan":
+            guard parts.count == 1 else { return .failure(.invalid("rescan takes no arguments")) }
+            return .success(.rescan)
 
         case "workspace":
             return parseWorkspace(parts.dropFirst(), workspaceCount: workspaceCount()).map(IPCCommand.action)

@@ -28,6 +28,7 @@ debug:
 
 test:
 	swift build --product piles-tests
+	swift build --product piles-ctl
 	.build/debug/piles-tests
 	bash Tests/benchmark-tests.sh
 
@@ -36,6 +37,7 @@ check: test build
 # Cursor's agent sandbox blocks SwiftPM's sandbox-exec; --disable-sandbox avoids that.
 agent-test:
 	swift build --disable-sandbox --product piles-tests
+	swift build --disable-sandbox --product piles-ctl
 	.build/debug/piles-tests
 	bash Tests/benchmark-tests.sh
 
@@ -68,7 +70,7 @@ dist: build
 	rm -rf $(BUNDLE)
 	mkdir -p $(BUNDLE)/Contents/MacOS
 	cp Info.plist $(BUNDLE)/Contents/
-	cp $(BUILD_DIR)/$(APP_NAME) $(BUNDLE)/Contents/MacOS/
+	cp $(BUILD_DIR)/$(APP_NAME) $(BUILD_DIR)/piles-ctl $(BUNDLE)/Contents/MacOS/
 	codesign --force --sign "$(CODESIGN_IDENTITY)" --requirements '$(CODESIGN_REQUIREMENTS)' $(BUNDLE)
 	zip -r $(APP_NAME).zip $(BUNDLE)
 	@shasum -a 256 $(APP_NAME).zip

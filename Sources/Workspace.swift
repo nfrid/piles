@@ -152,7 +152,7 @@ package final class WorkspaceManager {
         return result
     }
 
-    func syncWindows(pid: pid_t, windows: [TrackedWindow]) {
+    func syncWindows(pid: pid_t, windows: [TrackedWindow], commit: Bool = true) {
         DebugLog.write("workspace sync begin pid=\(pid) windows=\(DebugLog.describe(windows))")
         let hadTrackedWindows = hasTrackedWindows(pid: pid)
         var changed = false
@@ -170,7 +170,7 @@ package final class WorkspaceManager {
             changed = changed || result == .inserted || result == .replaced
         }
 
-        if changed {
+        if changed && commit {
             commitChanges()
         }
         DebugLog.write("workspace sync end pid=\(pid) changed=\(changed)")
@@ -383,6 +383,41 @@ package final class WorkspaceManager {
         for monitor in monitors {
             monitor.restoreAllWindows()
         }
+    }
+
+    struct RescanReport: Encodable {
+        let discoveredWindows: Int
+        let unavailableApplications: Int
+
+        enum CodingKeys: String, CodingKey {
+            case discoveredWindows = "discovered_windows"
+            case unavailableApplications = "unavailable_apps"
+        }
+    }
+
+    func rescan() -> RescanReport {
+        guard !monitors.isEmpty else { return RescanReport(discoveredWindows: 0, unavailableApplications: 0) }
+        let inventory = WindowManager.scanWindows()
+        let incoming = Dictionary(grouping: inventory.windows, by: \.pid)
+        var pids: [pid_t] = []
+        var seen: Set<pid_t> = []
+        for window in inventory.windows where seen.insert(window.pid).inserted {
+            pids.append(window.pid)
+        }
+        for monitor in monitors {
+            for workspace in monitor.workspaces {
+                for window in workspace where seen.insert(window.pid).inserted {
+                    pids.append(window.pid)
+                }
+            }
+        }
+        for pid in pids {
+            syncWindows(pid: pid, windows: incoming[pid] ?? [], commit: false)
+        }
+        for monitor in monitors { monitor.retile() }
+        commitChanges()
+        return RescanReport(discoveredWindows: inventory.windows.count,
+                            unavailableApplications: inventory.unavailableApplications)
     }
 
     private func rebuildMonitors() {

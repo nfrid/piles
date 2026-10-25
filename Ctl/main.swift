@@ -9,6 +9,9 @@ private func printUsage() {
           ping
           status
           windows
+          rescan
+          rescue
+          config validate [PATH]
           workspace <1-9> [--move]
           workspace next|prev [--move]
           workspace last
@@ -16,6 +19,7 @@ private func printUsage() {
           glance
           focus next|prev
           window move next|prev
+          window close
           layout toggle
           master swap
           monitor focus next|prev
@@ -51,6 +55,52 @@ private func parseArgs(_ args: [String]) -> (socketPath: String?, commandParts: 
     return (socketPath, commandParts)
 }
 
+private func validateConfig(at explicitPath: String?) -> Int32 {
+    let path = explicitPath.map { NSString(string: $0).expandingTildeInPath } ?? Config.defaultPath
+    do {
+        let diagnostics = ConfigParser.validate(text: try String(contentsOfFile: path, encoding: .utf8))
+        guard diagnostics.isEmpty else {
+            for diagnostic in diagnostics {
+                fputs("piles-ctl: \(path): \(diagnostic)\n", stderr)
+            }
+            return 1
+        }
+        print("configuration valid: \(path)")
+        return 0
+    } catch {
+        let error = error as NSError
+        if explicitPath == nil, error.domain == NSCocoaErrorDomain, error.code == NSFileReadNoSuchFileError {
+            print("configuration valid: using defaults, no file at \(path)")
+            return 0
+        }
+        fputs("piles-ctl: could not read \(path): \(error.localizedDescription)\n", stderr)
+        return 1
+    }
+}
+
+private func rescueWindows() -> Int32 {
+    guard let executable = Bundle.main.executableURL else {
+        fputs("piles-ctl: could not locate the running executable\n", stderr)
+        return 1
+    }
+    let companion = executable.resolvingSymlinksInPath().deletingLastPathComponent().appendingPathComponent("piles")
+    guard FileManager.default.isExecutableFile(atPath: companion.path) else {
+        fputs("piles-ctl: could not find piles beside piles-ctl; run make install\n", stderr)
+        return 1
+    }
+    let process = Process()
+    process.executableURL = companion
+    process.arguments = ["--rescue"]
+    do {
+        try process.run()
+    } catch {
+        fputs("piles-ctl: could not start rescue: \(error.localizedDescription)\n", stderr)
+        return 1
+    }
+    process.waitUntilExit()
+    return process.terminationReason == .exit ? process.terminationStatus : 1
+}
+
 @main
 enum PilesCtl {
     static func main() {
@@ -58,6 +108,23 @@ enum PilesCtl {
         guard let parsed = parseArgs(args) else {
             printUsage()
             exit(2)
+        }
+
+        if parsed.commandParts.first == "config" {
+            guard parsed.socketPath == nil,
+                  (2...3).contains(parsed.commandParts.count),
+                  parsed.commandParts[1] == "validate" else {
+                printUsage()
+                exit(2)
+            }
+            exit(validateConfig(at: parsed.commandParts.count == 3 ? parsed.commandParts[2] : nil))
+        }
+        if parsed.commandParts.first == "rescue" {
+            guard parsed.socketPath == nil, parsed.commandParts.count == 1 else {
+                printUsage()
+                exit(2)
+            }
+            exit(rescueWindows())
         }
 
         Config.load()

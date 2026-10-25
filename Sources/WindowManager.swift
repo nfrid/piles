@@ -133,21 +133,21 @@ enum WindowManager {
     }
 
     static func allWindows() -> [TrackedWindow] {
+        scanWindows().windows
+    }
+
+    static func scanWindows() -> (windows: [TrackedWindow], unavailableApplications: Int) {
         var result: [TrackedWindow] = []
+        var unavailable = 0
         for app in NSWorkspace.shared.runningApplications {
-            guard app.activationPolicy == .regular else { continue }
-            guard !app.isHidden else { continue }
-            let pid = app.processIdentifier
-            let appRef = AXUIElementCreateApplication(pid)
-
-            var windowsValue: AnyObject?
-            guard AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &windowsValue) == .success,
-                  let windows = windowsValue as? [AXUIElement]
-            else { continue }
-
-            result.append(contentsOf: trackedWindows(pid: pid, windows: windows))
+            guard app.activationPolicy == .regular, !app.isHidden else { continue }
+            if let windows = windows(pid: app.processIdentifier) {
+                result.append(contentsOf: windows)
+            } else {
+                unavailable += 1
+            }
         }
-        return result
+        return (result, unavailable)
     }
 
     static func windows(pid: pid_t) -> [TrackedWindow]? {

@@ -361,6 +361,7 @@ package enum ConfigParser {
         case is Int.Type: return "integer"
         case is Double.Type: return "number"
         case is Bool.Type: return "boolean"
+        case is [[String: Any]].Type: return "array of tables"
         default: return "table"
         }
     }

@@ -360,6 +360,12 @@ package final class IPCServer {
                 return encode(DiagnosticsSnapshot.windows(from: WorkspaceManager.shared))
             }
             if let response { writeResponse(fd: fd, response + "\n") }
+        case .success(.rescan):
+            let response = MainThread.runSync { [self] in
+                guard isCurrent(generation: generation) else { return nil as String? }
+                return encode(WorkspaceManager.shared.rescan())
+            }
+            if let response { writeResponse(fd: fd, response + "\n") }
         case .success(.action(let action)):
             let performed = DispatchQueue.main.sync { [self] in
                 guard isCurrent(generation: generation) else { return false }

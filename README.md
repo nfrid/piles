@@ -65,6 +65,8 @@ reinstall, restart the running app, and open it.
 - **config reload** - reload the config from the menubar without restarting
 - **ipc control** - `piles-ctl` sends commands over a unix socket so tools like
   Hammerspoon can trigger actions without faking key events
+- **diagnostics and recovery** - inspect tracked state, validate configuration,
+  rescan windows, or restore offscreen windows after a crash
 - **clean shutdown** - windows are brought back onscreen on quit, SIGTERM, SIGINT,
   and normal process exit. SIGKILL and fatal crashes bypass this cleanup
 
@@ -167,7 +169,7 @@ Commands mirror hotkey actions: `workspace last`, `focus next|prev`,
 `window move next|prev`, `window close`, `layout toggle`, `master swap`,
 `monitor focus next|prev`, `monitor move next|prev`.
 
-Commands have a two-second timeout. Existing files and active sockets at the
+IPC commands have a two-second timeout. Existing files and active sockets at the
 configured path are not overwritten. Only one piles instance can manage windows
 at a time, even with IPC disabled.
 
@@ -192,6 +194,68 @@ hs.eventtap.new({hs.eventtap.event.types.gesture}, function(e)
 end):start()
 ```
 
+## Diagnostics and recovery
+
+Read-only commands return one JSON object:
+
+```bash
+piles-ctl status
+piles-ctl windows
+```
+
+`status` lists monitors and their workspaces, layouts, and window counts.
+`focused_monitor`, monitor indices, workspace indices, and `active_workspace`
+are 1-based. `windows` lists tracked windows in monitor/workspace/stack order,
+including windows on inactive workspaces. Each window has its PID, monitor,
+workspace, and an `active` flag that means its workspace is active on that
+monitor. App name, bundle ID, title, and frame are optional when unavailable.
+Frame coordinates use the Accessibility coordinate system, with the origin at
+the primary display's top-left corner; offscreen positions can be negative.
+These commands do not move or focus windows.
+
+Validate a config without contacting or changing the running app:
+
+```bash
+piles-ctl config validate
+piles-ctl config validate config.example.toml
+```
+
+Validation reports syntax errors, unknown keys, wrong types, and invalid values
+that would otherwise fall back to defaults. Exit code 0 means valid, 1 means a
+validation or read failure, and 2 means invalid command arguments. A missing
+optional default config is valid and uses defaults; an explicitly supplied
+missing path is an error.
+
+Ask the running app to discover windows again:
+
+```bash
+piles-ctl rescan
+```
+
+Rescan preserves existing window assignments and ordering. It applies assignment
+rules to newly discovered windows and retiles active workspaces. Its JSON report
+has `discovered_windows` and `unavailable_apps`; unavailable apps retain their
+previously tracked windows unless those windows are confirmed invalid.
+
+After quitting piles, or after a crash, restore offscreen windows with:
+
+```bash
+piles-ctl rescue
+```
+
+Rescue launches the main `piles` executable beside `piles-ctl` in one-shot mode.
+It refuses to run while another piles instance holds the lock, even if IPC is
+disabled. It uses the main executable's Accessibility permission and does not
+start hotkeys, IPC, or tiling. Fully onscreen windows stay unchanged; other
+windows move inside the display with the largest overlap, or the nearest display
+if completely offscreen. Window sizes are preserved. Fullscreen, minimized, and
+hidden applications' windows are not brought out of those states.
+
+The report separates restored, skipped, and failed windows, plus applications
+whose window lists could not be read. Partial failures return exit code 1.
+Rescue exits when finished; launch piles normally afterwards. The equivalent
+direct command is `/Applications/piles.app/Contents/MacOS/piles --rescue`.
+
 ## Development
 
 ```bash
@@ -199,9 +263,10 @@ make test
 make build
 ```
 
-The test target is a small executable, not XCTest. `make test` also checks the
-benchmark's window tracking with mocked AppleScript calls. It does not move real
-windows.
+The test target is a small executable, not XCTest. `make test` also builds the
+CLI and tests it with temporary configs and a fake rescue executable. Recovery
+geometry tests use injected window data; no test moves real windows. The
+benchmark's window tracking uses mocked AppleScript calls.
 
 `make benchmark` opens temporary Terminal windows for its workload and closes
 only those windows on completion or interruption. Existing Terminal windows are
