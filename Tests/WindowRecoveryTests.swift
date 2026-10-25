@@ -59,6 +59,18 @@ enum WindowRecoveryTests {
                   "invalid display dimensions are rejected")
         }
 
+        let unreadable = AXUIElementCreateApplication(900_101)
+        let anotherUnreadable = AXUIElementCreateApplication(900_102)
+        let rawInventory = WindowManager.recoveryWindows(pid: 900_000,
+                                                        elements: [unreadable, unreadable, anotherUnreadable])
+        check(rawInventory.count == 2, "recovery inventory retains unreadable windows and deduplicates references")
+        let unreadableResult = WindowRecovery.rescue(windows: rawInventory, screens: [screen], attributesFor: { _ in nil })
+        if case .success(let report) = unreadableResult {
+            check(report.failed == 2 && report.hasFailures, "unreadable recovery inventory reports failure instead of false success")
+        } else {
+            check(false, "unreadable inventory still produces a recovery report when displays exist")
+        }
+
         let windows: [TrackedWindow] = (1...8).map { index in
             let pid = pid_t(90_000 + index)
             return TrackedWindow(element: AXUIElementCreateApplication(pid), pid: pid,

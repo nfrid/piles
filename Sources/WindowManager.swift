@@ -136,12 +136,14 @@ enum WindowManager {
         scanWindows().windows
     }
 
-    static func scanWindows() -> (windows: [TrackedWindow], unavailableApplications: Int) {
+    static func scanWindows(
+        windowsForPID: (pid_t) -> [TrackedWindow]? = { windows(pid: $0) }
+    ) -> (windows: [TrackedWindow], unavailableApplications: Int) {
         var result: [TrackedWindow] = []
         var unavailable = 0
         for app in NSWorkspace.shared.runningApplications {
             guard app.activationPolicy == .regular, !app.isHidden else { continue }
-            if let windows = windows(pid: app.processIdentifier) {
+            if let windows = windowsForPID(app.processIdentifier) {
                 result.append(contentsOf: windows)
             } else {
                 unavailable += 1
@@ -151,6 +153,24 @@ enum WindowManager {
     }
 
     static func windows(pid: pid_t) -> [TrackedWindow]? {
+        windowElements(pid: pid).map { trackedWindows(pid: pid, windows: $0) }
+    }
+
+    // Rescue must report unreadable frames/attributes rather than silently filter them out.
+    static func recoveryWindows(pid: pid_t) -> [TrackedWindow]? {
+        windowElements(pid: pid).map { recoveryWindows(pid: pid, elements: $0) }
+    }
+
+    static func recoveryWindows(pid: pid_t, elements: [AXUIElement]) -> [TrackedWindow] {
+        var seen: Set<WindowIdentityKey> = []
+        return elements.compactMap { element in
+            let window = TrackedWindow(element: element, pid: pid)
+            guard seen.insert(WindowIdentityKey(element: window.element)).inserted else { return nil }
+            return window
+        }
+    }
+
+    private static func windowElements(pid: pid_t) -> [AXUIElement]? {
         guard !isAppHidden(pid: pid) else { return [] }
         let appRef = AXUIElementCreateApplication(pid)
 
@@ -159,7 +179,7 @@ enum WindowManager {
               let windows = windowsValue as? [AXUIElement]
         else { return nil }
 
-        return trackedWindows(pid: pid, windows: windows)
+        return windows
     }
 
     static func isAppHidden(pid: pid_t) -> Bool {

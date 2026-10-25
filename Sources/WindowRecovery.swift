@@ -18,7 +18,7 @@ package enum WindowRecovery {
     package static func rescue() -> Result<Report, RecoveryError> {
         let screens = NSScreen.screens.map { WindowManager.screenFrame(for: $0) }
         guard screens.contains(where: isUsable) else { return .failure(.noScreens) }
-        let inventory = WindowManager.scanWindows()
+        let inventory = WindowManager.scanWindows(windowsForPID: WindowManager.recoveryWindows)
         return rescue(
             windows: inventory.windows,
             screens: screens,

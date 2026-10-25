@@ -13,9 +13,11 @@ enum WindowRescanTests {
             }
         }
 
-        let element = AXUIElementCreateApplication(0)
+        var identity: pid_t = 900_000
         func window(_ pid: pid_t) -> TrackedWindow {
-            TrackedWindow(element: element, pid: pid)
+            identity += 1
+            return TrackedWindow(element: AXUIElementCreateApplication(identity), pid: pid,
+                                 group: WindowGroupKey(pid: pid, frame: .zero))
         }
         let first = window(11)
         let second = window(12)
