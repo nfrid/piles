@@ -28,6 +28,20 @@ enum MonitorTests {
         do {
             let monitor = Monitor(displayID: 0, screen: screen)
             monitor.paused = true
+            let live = testWindow(pid: getpid())
+            let orphan = testWindow(pid: pid_t.max)
+            monitor.state.workspaces[1] = [live, orphan]
+            monitor.state.focusedIndices[1] = 1
+
+            monitor.switchTo(1)
+
+            check(monitor.state.workspaces[1] == [live], "switch drops an orphaned window while paused")
+            check(monitor.clampedFocus(in: 1) == 0, "switch restores focus to the surviving window")
+        }
+
+        do {
+            let monitor = Monitor(displayID: 0, screen: screen)
+            monitor.paused = true
             let kept = testWindow(pid: 5001)
             let removed = testWindow(pid: 5002)
             monitor.state.workspaces[0] = [kept, removed]

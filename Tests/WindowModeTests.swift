@@ -81,6 +81,7 @@ enum WindowModeTests {
         var positionWrites: [(pid: pid_t, point: CGPoint)] = []
         var restoreWrites: [pid_t] = []
         parkedMonitor.paused = true
+        parkedMonitor.windowAttributes = { _ in trackable }
         parkedMonitor.isEligibleForGeometry = { _ in true }
         parkedMonitor.readFrame = { parkedFrames[$0.pid] }
         parkedMonitor.moveWindow = { window, point in

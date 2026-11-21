@@ -214,7 +214,7 @@ package final class Monitor {
         pid: pid_t,
         current: [TrackedWindow],
         attributesFor: (TrackedWindow) -> WindowAttributes? = { $0.attributes() },
-        isConfirmedInvalid: (TrackedWindow) -> Bool = { WindowManager.isConfirmedInvalid($0.element) }
+        isConfirmedInvalid: (TrackedWindow) -> Bool = WindowManager.isConfirmedInvalid
     ) -> Bool {
         removeWindows { window in
             guard window.pid == pid, !current.contains(window) else { return false }
@@ -424,7 +424,7 @@ package final class Monitor {
     func cleanActiveWorkspace(
         applyChanges: Bool = true,
         attributesFor: (TrackedWindow) -> WindowAttributes? = { $0.attributes() },
-        isConfirmedInvalid: (TrackedWindow) -> Bool = { WindowManager.isConfirmedInvalid($0.element) }
+        isConfirmedInvalid: (TrackedWindow) -> Bool = WindowManager.isConfirmedInvalid
     ) -> [ActiveWindowSnapshot] {
         var focusedIndex = state.focusedIndices[state.active]
         let originalWindows = state.workspaces[state.active]
@@ -568,6 +568,7 @@ package final class Monitor {
     /// Place the active workspace on screen before moving the previous workspace offscreen
     /// so the desktop is not exposed between AX updates.
     func revealActiveWorkspace(hiding previous: Int) {
+        if paused { cleanActiveWorkspace(attributesFor: windowAttributes) }
         for window in state.workspaces[state.active] where paused || state.isFloating(window) {
             reveal(window)
         }

@@ -242,9 +242,12 @@ enum WindowManager {
         attributes(of: element)?.isTrackable ?? false
     }
 
-    static func isConfirmedInvalid(_ element: AXUIElement) -> Bool {
+    static func isConfirmedInvalid(_ window: TrackedWindow) -> Bool {
+        if window.pid > 0, kill(window.pid, 0) == -1, errno == ESRCH {
+            return true
+        }
         var value: AnyObject?
-        let result = AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &value)
+        let result = AXUIElementCopyAttributeValue(window.element, kAXRoleAttribute as CFString, &value)
         return result == .invalidUIElement
     }
 

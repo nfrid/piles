@@ -282,8 +282,8 @@ piles-ctl rescan
 
 Rescan preserves existing window assignments and ordering. It applies assignment
 rules to newly discovered windows and retiles active workspaces. Its JSON report
-has `discovered_windows` and `unavailable_apps`; unavailable apps retain their
-previously tracked windows unless AX confirms that they are invalid or no longer
+has `discovered_windows` and `unavailable_apps`. The rescan removes windows
+whose process has exited or whose AX element is confirmed invalid or no longer
 trackable, such as a window that has become a dialog. Missing AX data alone does
 not remove a window.
 
